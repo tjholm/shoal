@@ -1,0 +1,15 @@
+{
+  "name": "@shoal.sh/cli",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "shoal": "./bin.ts"
+  },
+  "scripts": {
+    "dev": "bun run bin.ts worker start --server wss://server.shoal.localhost/ws/workers --name dev"
+  },
+  "dependencies": {
+    "@shoal/protocol": "workspace:*",
+    "citty": "^0.2.2"
+  }
+}

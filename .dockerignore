@@ -1,0 +1,16 @@
+**/node_modules
+**/dist
+**/.cache
+**/.vite
+**/.turbo
+.git
+.github
+.vscode
+.idea
+.DS_Store
+shoal.db
+shoal.db-shm
+shoal.db-wal
+**/.env
+**/.env.*
+!**/.env.example

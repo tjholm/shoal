@@ -1,0 +1,29 @@
+{
+  "name": "shoal",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "predev": "dotenvx run -- bunx portless proxy start --skip-trust || true",
+    "dev": "dotenvx run -- portless",
+    "dev:server": "dotenvx run -- bun --cwd=apps/server portless server.shoal bun run dev",
+    "dev:cli": "dotenvx run -- bun --cwd=apps/cli dev",
+    "dev:web": "dotenvx run -- bun --cwd=apps/web portless web.shoal bun run dev",
+    "db": "dotenvx run -- node --import tsx/esm packages/db/cli.ts",
+    "db:push": "dotenvx run -- bun run --filter @shoal/db push",
+    "db:generate": "dotenvx run -- bun run --filter @shoal/db generate",
+    "db:studio": "dotenvx run -- bun run --filter @shoal/db studio"
+  },
+  "dependencies": {
+    "nitro": "npm:nitro-nightly@latest"
+  },
+  "devDependencies": {
+    "@dotenvx/dotenvx": "^1.64.0",
+    "bun-types": "latest",
+    "concurrently": "^9.2.1",
+    "portless": "^0.12.0",
+    "tsx": "^4.21.0"
+  },
+  "overrides": {
+    "nitro": "npm:nitro-nightly@latest"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "@shoal/protocol",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "dependencies": {
+    "zod": "^3"
+  }
+}

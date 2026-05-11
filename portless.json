@@ -1,0 +1,9 @@
+{
+  "apps": {
+    "apps/cli": {
+      "proxy": false,
+      "_comment": "Skip CLI from `bun run dev` auto-discovery — its TLS+timing semantics differ from the HTTP apps. Run it separately with `bun run dev:cli`.",
+      "script": "_skip"
+    }
+  }
+}

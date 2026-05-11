@@ -1,0 +1,167 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - name: Typecheck
+        run: |
+          bunx tsc --noEmit
+          bunx tsc --noEmit -p apps/server
+          bunx tsc --noEmit -p apps/web
+      - name: Test
+        run: bun test --pass-with-no-tests
+
+  release-cli:
+    needs: checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+      - run: bun install --frozen-lockfile
+
+      - id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      # --- npm bundle ---
+      - name: Build npm bundle
+        run: |
+          mkdir -p dist/npm
+          bun build apps/cli/bin.ts \
+            --target=node \
+            --outfile=dist/npm/shoal.js \
+            --minify \
+            --banner='#!/usr/bin/env node'
+          chmod +x dist/npm/shoal.js
+
+      - name: Write publish package.json
+        run: |
+          cat > dist/npm/package.json <<EOF
+          {
+            "name": "@shoal.sh/cli",
+            "version": "${{ steps.version.outputs.version }}",
+            "license": "MIT",
+            "type": "module",
+            "bin": { "shoal": "shoal.js" },
+            "engines": { "node": ">=22" }
+          }
+          EOF
+
+      - name: Publish to npm
+        run: cd dist/npm && npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+
+      # --- binaries (disabled: re-enable once the image/binary namespace is stable, e.g. after repo transfer) ---
+      # - name: Build binaries
+      #   run: |
+      #     mkdir -p dist/bin
+      #     for target in bun-linux-x64 bun-linux-arm64 bun-darwin-x64 bun-darwin-arm64 bun-windows-x64; do
+      #       name=${target#bun-}
+      #       ext=""
+      #       [[ "$target" == *windows* ]] && ext=".exe"
+      #       bun build apps/cli/bin.ts \
+      #         --compile \
+      #         --target="$target" \
+      #         --outfile="dist/bin/shoal-${name}${ext}"
+      #     done
+      #
+      # - uses: softprops/action-gh-release@v2
+      #   with:
+      #     files: dist/bin/*
+      #     generate_release_notes: true
+
+  # release-lite (disabled: re-enable once the GHCR namespace is stable, e.g. after repo transfer)
+  # release-lite:
+  #   needs: checks
+  #   runs-on: ubuntu-latest
+  #   permissions:
+  #     contents: read
+  #     packages: write
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #
+  #     - id: version
+  #       run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+  #
+  #     - id: image
+  #       run: echo "name=ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/shoal-lite" >> "$GITHUB_OUTPUT"
+  #
+  #     - uses: docker/setup-qemu-action@v3
+  #     - uses: docker/setup-buildx-action@v3
+  #
+  #     - uses: docker/login-action@v3
+  #       with:
+  #         registry: ghcr.io
+  #         username: ${{ github.actor }}
+  #         password: ${{ secrets.GITHUB_TOKEN }}
+  #
+  #     - uses: docker/build-push-action@v6
+  #       with:
+  #         context: .
+  #         file: apps/server/lite.dockerfile
+  #         platforms: linux/amd64,linux/arm64
+  #         push: true
+  #         tags: |
+  #           ${{ steps.image.outputs.name }}:${{ steps.version.outputs.version }}
+  #           ${{ steps.image.outputs.name }}:latest
+  #         cache-from: type=gha
+  #         cache-to: type=gha,mode=max
+
+  # release-server (disabled: re-enable once the GHCR namespace is stable, e.g. after repo transfer)
+  # release-server:
+  #   needs: checks
+  #   runs-on: ubuntu-latest
+  #   permissions:
+  #     contents: read
+  #     packages: write
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #
+  #     - id: version
+  #       run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+  #
+  #     - id: image
+  #       run: echo "name=ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/shoal" >> "$GITHUB_OUTPUT"
+  #
+  #     - uses: docker/setup-qemu-action@v3
+  #     - uses: docker/setup-buildx-action@v3
+  #
+  #     - uses: docker/login-action@v3
+  #       with:
+  #         registry: ghcr.io
+  #         username: ${{ github.actor }}
+  #         password: ${{ secrets.GITHUB_TOKEN }}
+  #
+  #     - uses: docker/build-push-action@v6
+  #       with:
+  #         context: .
+  #         file: apps/server/server.dockerfile
+  #         platforms: linux/amd64,linux/arm64
+  #         push: true
+  #         tags: |
+  #           ${{ steps.image.outputs.name }}:${{ steps.version.outputs.version }}
+  #           ${{ steps.image.outputs.name }}:latest
+  #         cache-from: type=gha
+  #         cache-to: type=gha,mode=max

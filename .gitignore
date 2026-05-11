@@ -1,3 +1,12 @@
+# Local pglite data directory (default DATABASE_URL target)
+/data/
+.data/
+
+# Stale SQLite files from the pre-pglite tier
+shoal.db
+shoal.db-shm
+shoal.db-wal
+
 # Logs
 logs
 *.log
@@ -86,3 +95,8 @@ typings/
 
 # DynamoDB Local files
 .dynamodb/
+
+# SQLite
+*.db
+*.db-wal
+*.db-shm
