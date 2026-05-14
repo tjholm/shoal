@@ -63,6 +63,21 @@ export const WorkerMessage = z.discriminatedUnion("type", [
     jobId: z.string(),
     vector: z.array(z.number()),
   }),
+  // Image generation results. `b64` carries a base64-encoded image body when the
+  // caller asked for b64_json; `url` carries a backend-issued URL when the
+  // caller asked for url (some backends only support one form). `revisedPrompt`
+  // is the prompt the backend actually rendered (DALL·E 3 rewrites prompts).
+  z.object({
+    type: z.literal("image"),
+    jobId: z.string(),
+    images: z.array(
+      z.object({
+        b64: z.string().optional(),
+        url: z.string().optional(),
+        revisedPrompt: z.string().optional(),
+      }),
+    ),
+  }),
   z.object({
     type: z.literal("done"),
     jobId: z.string(),
@@ -144,7 +159,7 @@ export const ServerMessage = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("infer"),
     jobId: z.string(),
-    task: z.enum(["chat", "embedding"]),
+    task: z.enum(["chat", "embedding", "image"]),
     model: z.string(),
     input: z.unknown(),
     options: z
@@ -154,6 +169,17 @@ export const ServerMessage = z.discriminatedUnion("type", [
         // Tools and tool_choice are passed to the backend in OpenAI shape.
         tools: z.array(z.unknown()).optional(),
         toolChoice: z.unknown().optional(),
+        // Image-generation parameters. Forwarded to the backend's
+        // /v1/images/generations in OpenAI shape. Absent for chat/embedding.
+        image: z
+          .object({
+            size: z.string().optional(),
+            n: z.number().int().positive().optional(),
+            quality: z.string().optional(),
+            style: z.string().optional(),
+            responseFormat: z.enum(["url", "b64_json"]).optional(),
+          })
+          .optional(),
       })
       .optional(),
   }),

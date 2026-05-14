@@ -17,6 +17,7 @@ import { Route as ApiHealthzRouteImport } from './routes/api/healthz'
 import { Route as AcceptInvitationInvitationIdRouteImport } from './routes/accept-invitation.$invitationId'
 import { Route as AuthedWorkersRouteImport } from './routes/_authed/workers'
 import { Route as AuthedMembersRouteImport } from './routes/_authed/members'
+import { Route as AuthedImagesRouteImport } from './routes/_authed/images'
 import { Route as AuthedChatRouteImport } from './routes/_authed/chat'
 import { Route as AuthedApiKeysRouteImport } from './routes/_authed/api-keys'
 import { Route as ApiWorkersStreamRouteImport } from './routes/api/workers.stream'
@@ -25,6 +26,7 @@ import { Route as ApiV1MessagesRouteImport } from './routes/api/v1/messages'
 import { Route as ApiV1EmbeddingsRouteImport } from './routes/api/v1/embeddings'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as AuthedWorkersWorkerIdRouteImport } from './routes/_authed/workers_.$workerId'
+import { Route as ApiV1ImagesGenerationsRouteImport } from './routes/api/v1/images.generations'
 import { Route as ApiV1ChatCompletionsRouteImport } from './routes/api/v1/chat.completions'
 
 const SignUpRoute = SignUpRouteImport.update({
@@ -67,6 +69,11 @@ const AuthedMembersRoute = AuthedMembersRouteImport.update({
   path: '/members',
   getParentRoute: () => AuthedRoute,
 } as any)
+const AuthedImagesRoute = AuthedImagesRouteImport.update({
+  id: '/images',
+  path: '/images',
+  getParentRoute: () => AuthedRoute,
+} as any)
 const AuthedChatRoute = AuthedChatRouteImport.update({
   id: '/chat',
   path: '/chat',
@@ -107,6 +114,11 @@ const AuthedWorkersWorkerIdRoute = AuthedWorkersWorkerIdRouteImport.update({
   path: '/workers/$workerId',
   getParentRoute: () => AuthedRoute,
 } as any)
+const ApiV1ImagesGenerationsRoute = ApiV1ImagesGenerationsRouteImport.update({
+  id: '/api/v1/images/generations',
+  path: '/api/v1/images/generations',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiV1ChatCompletionsRoute = ApiV1ChatCompletionsRouteImport.update({
   id: '/api/v1/chat/completions',
   path: '/api/v1/chat/completions',
@@ -119,6 +131,7 @@ export interface FileRoutesByFullPath {
   '/sign-up': typeof SignUpRoute
   '/api-keys': typeof AuthedApiKeysRoute
   '/chat': typeof AuthedChatRoute
+  '/images': typeof AuthedImagesRoute
   '/members': typeof AuthedMembersRoute
   '/workers': typeof AuthedWorkersRoute
   '/accept-invitation/$invitationId': typeof AcceptInvitationInvitationIdRoute
@@ -130,12 +143,14 @@ export interface FileRoutesByFullPath {
   '/api/v1/models': typeof ApiV1ModelsRoute
   '/api/workers/stream': typeof ApiWorkersStreamRoute
   '/api/v1/chat/completions': typeof ApiV1ChatCompletionsRoute
+  '/api/v1/images/generations': typeof ApiV1ImagesGenerationsRoute
 }
 export interface FileRoutesByTo {
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
   '/api-keys': typeof AuthedApiKeysRoute
   '/chat': typeof AuthedChatRoute
+  '/images': typeof AuthedImagesRoute
   '/members': typeof AuthedMembersRoute
   '/workers': typeof AuthedWorkersRoute
   '/accept-invitation/$invitationId': typeof AcceptInvitationInvitationIdRoute
@@ -148,6 +163,7 @@ export interface FileRoutesByTo {
   '/api/v1/models': typeof ApiV1ModelsRoute
   '/api/workers/stream': typeof ApiWorkersStreamRoute
   '/api/v1/chat/completions': typeof ApiV1ChatCompletionsRoute
+  '/api/v1/images/generations': typeof ApiV1ImagesGenerationsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -156,6 +172,7 @@ export interface FileRoutesById {
   '/sign-up': typeof SignUpRoute
   '/_authed/api-keys': typeof AuthedApiKeysRoute
   '/_authed/chat': typeof AuthedChatRoute
+  '/_authed/images': typeof AuthedImagesRoute
   '/_authed/members': typeof AuthedMembersRoute
   '/_authed/workers': typeof AuthedWorkersRoute
   '/accept-invitation/$invitationId': typeof AcceptInvitationInvitationIdRoute
@@ -168,6 +185,7 @@ export interface FileRoutesById {
   '/api/v1/models': typeof ApiV1ModelsRoute
   '/api/workers/stream': typeof ApiWorkersStreamRoute
   '/api/v1/chat/completions': typeof ApiV1ChatCompletionsRoute
+  '/api/v1/images/generations': typeof ApiV1ImagesGenerationsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -177,6 +195,7 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/api-keys'
     | '/chat'
+    | '/images'
     | '/members'
     | '/workers'
     | '/accept-invitation/$invitationId'
@@ -188,12 +207,14 @@ export interface FileRouteTypes {
     | '/api/v1/models'
     | '/api/workers/stream'
     | '/api/v1/chat/completions'
+    | '/api/v1/images/generations'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/sign-in'
     | '/sign-up'
     | '/api-keys'
     | '/chat'
+    | '/images'
     | '/members'
     | '/workers'
     | '/accept-invitation/$invitationId'
@@ -206,6 +227,7 @@ export interface FileRouteTypes {
     | '/api/v1/models'
     | '/api/workers/stream'
     | '/api/v1/chat/completions'
+    | '/api/v1/images/generations'
   id:
     | '__root__'
     | '/_authed'
@@ -213,6 +235,7 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/_authed/api-keys'
     | '/_authed/chat'
+    | '/_authed/images'
     | '/_authed/members'
     | '/_authed/workers'
     | '/accept-invitation/$invitationId'
@@ -225,6 +248,7 @@ export interface FileRouteTypes {
     | '/api/v1/models'
     | '/api/workers/stream'
     | '/api/v1/chat/completions'
+    | '/api/v1/images/generations'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -239,6 +263,7 @@ export interface RootRouteChildren {
   ApiV1ModelsRoute: typeof ApiV1ModelsRoute
   ApiWorkersStreamRoute: typeof ApiWorkersStreamRoute
   ApiV1ChatCompletionsRoute: typeof ApiV1ChatCompletionsRoute
+  ApiV1ImagesGenerationsRoute: typeof ApiV1ImagesGenerationsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -299,6 +324,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedMembersRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/images': {
+      id: '/_authed/images'
+      path: '/images'
+      fullPath: '/images'
+      preLoaderRoute: typeof AuthedImagesRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/chat': {
       id: '/_authed/chat'
       path: '/chat'
@@ -355,6 +387,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedWorkersWorkerIdRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/api/v1/images/generations': {
+      id: '/api/v1/images/generations'
+      path: '/api/v1/images/generations'
+      fullPath: '/api/v1/images/generations'
+      preLoaderRoute: typeof ApiV1ImagesGenerationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/v1/chat/completions': {
       id: '/api/v1/chat/completions'
       path: '/api/v1/chat/completions'
@@ -368,6 +407,7 @@ declare module '@tanstack/react-router' {
 interface AuthedRouteChildren {
   AuthedApiKeysRoute: typeof AuthedApiKeysRoute
   AuthedChatRoute: typeof AuthedChatRoute
+  AuthedImagesRoute: typeof AuthedImagesRoute
   AuthedMembersRoute: typeof AuthedMembersRoute
   AuthedWorkersRoute: typeof AuthedWorkersRoute
   AuthedIndexRoute: typeof AuthedIndexRoute
@@ -377,6 +417,7 @@ interface AuthedRouteChildren {
 const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedApiKeysRoute: AuthedApiKeysRoute,
   AuthedChatRoute: AuthedChatRoute,
+  AuthedImagesRoute: AuthedImagesRoute,
   AuthedMembersRoute: AuthedMembersRoute,
   AuthedWorkersRoute: AuthedWorkersRoute,
   AuthedIndexRoute: AuthedIndexRoute,
@@ -398,6 +439,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiV1ModelsRoute: ApiV1ModelsRoute,
   ApiWorkersStreamRoute: ApiWorkersStreamRoute,
   ApiV1ChatCompletionsRoute: ApiV1ChatCompletionsRoute,
+  ApiV1ImagesGenerationsRoute: ApiV1ImagesGenerationsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

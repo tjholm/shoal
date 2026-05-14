@@ -5,6 +5,7 @@ import {
   embeddingInference,
   fetchAvailableModels,
   getLoadedModel,
+  imageInference,
   setBackendUrl,
 } from "../inference";
 import { ServerMessage, parseIncoming } from "../protocol";
@@ -282,6 +283,14 @@ function runWorker(opts: {
         ws?.send(JSON.stringify({ type: "embedding", jobId, vector: embeddings[0] }));
         jobsCompleted++;
         ws?.send(JSON.stringify({ type: "done", jobId, finishReason: "stop" }));
+      } else if (task === "image") {
+        const prompt = input as string;
+        const images = await imageInference(model, prompt, options?.image, controller.signal);
+        ws?.send(JSON.stringify({ type: "image", jobId, images }));
+        jobsCompleted++;
+        ws?.send(JSON.stringify({ type: "done", jobId, finishReason: "stop" }));
+      } else {
+        throw new Error(`Unknown task: ${task satisfies never}`);
       }
     } catch (err) {
       // Swallow the fetch AbortError silently — the server already knows the

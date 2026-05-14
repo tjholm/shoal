@@ -1,6 +1,7 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
   BrainCircuit,
+  ImageIcon,
   KeyRound,
   LayoutDashboard,
   type LucideIcon,
@@ -22,7 +23,7 @@ import {
 
 export interface NavItem {
   title: string;
-  url: "/" | "/workers" | "/chat" | "/members" | "/api-keys";
+  url: "/" | "/workers" | "/chat" | "/images" | "/members" | "/api-keys";
   icon: LucideIcon;
 }
 
@@ -30,6 +31,7 @@ export const navItems: NavItem[] = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "Workers", url: "/workers", icon: BrainCircuit },
   { title: "Chat", url: "/chat", icon: MessageSquare },
+  { title: "Images", url: "/images", icon: ImageIcon },
   { title: "Members", url: "/members", icon: Users },
   { title: "API Keys", url: "/api-keys", icon: KeyRound },
 ];

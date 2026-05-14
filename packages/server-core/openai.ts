@@ -251,6 +251,72 @@ export async function handleEmbeddings(req: Request, key: VerifiedKey): Promise<
   }
 }
 
+/** POST /v1/images/generations */
+export async function handleImageGenerations(req: Request, key: VerifiedKey): Promise<Response> {
+  let body: Record<string, unknown>;
+  try {
+    body = (await req.json()) as Record<string, unknown>;
+  } catch {
+    return jsonError("Invalid JSON body", 400);
+  }
+
+  const model = body.model;
+  if (typeof model !== "string" || model.length === 0) {
+    return jsonError("Missing 'model' field", 400);
+  }
+
+  const prompt = body.prompt;
+  if (typeof prompt !== "string" || prompt.length === 0) {
+    return jsonError("Missing 'prompt' field", 400);
+  }
+
+  const size = typeof body.size === "string" ? body.size : undefined;
+  const n = typeof body.n === "number" ? body.n : undefined;
+  const quality = typeof body.quality === "string" ? body.quality : undefined;
+  const style = typeof body.style === "string" ? body.style : undefined;
+  const responseFormatRaw = body.response_format;
+  const responseFormat =
+    responseFormatRaw === "url" || responseFormatRaw === "b64_json"
+      ? responseFormatRaw
+      : undefined;
+
+  try {
+    const result = dispatchJob({
+      organizationId: key.organizationId,
+      task: "image",
+      model,
+      input: prompt,
+      streaming: false,
+      image: { size, n, quality, style, responseFormat },
+    });
+
+    if (!("promise" in result)) {
+      return jsonError("Unexpected streaming result for images", 500);
+    }
+
+    const jobResult: JobResult = await result.promise;
+    if (!jobResult.images || jobResult.images.length === 0) {
+      return jsonError("Worker did not return any images", 500);
+    }
+
+    return Response.json({
+      created: Math.floor(Date.now() / 1000),
+      data: jobResult.images.map((img) => {
+        const out: Record<string, unknown> = {};
+        if (img.url !== undefined) out.url = img.url;
+        if (img.b64 !== undefined) out.b64_json = img.b64;
+        if (img.revisedPrompt !== undefined) out.revised_prompt = img.revisedPrompt;
+        return out;
+      }),
+    });
+  } catch (err) {
+    if (err instanceof ServiceUnavailableError) {
+      return jsonError(err.message, 503);
+    }
+    return jsonError((err as Error).message ?? "Internal error", 500);
+  }
+}
+
 /** GET /v1/models */
 export function handleModels(key: VerifiedKey): Response {
   const models = availableModels(key.organizationId).map((id) => ({

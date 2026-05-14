@@ -17,7 +17,7 @@ interface Job {
   /** Snapshot of the worker's keyId at dispatch time, so key rotation
    * mid-job doesn't move the resulting usage_event onto the new key. */
   keyId: string | null;
-  task: "chat" | "embedding";
+  task: "chat" | "embedding" | "image";
   model: string;
   streaming: boolean;
   /** Wall-clock dispatch time, ms epoch. Used for duration_ms on usage_event. */
@@ -30,6 +30,8 @@ interface Job {
   toolCalls: Map<number, ToolCallAccumulator>;
   /** Embedding vector (embedding tasks only). */
   embedding?: number[];
+  /** Generated images (image tasks only). */
+  images?: JobImage[];
   /** Resolves the non-streaming response promise. */
   resolve?: (value: JobResult) => void;
   reject?: (reason: Error) => void;
@@ -60,11 +62,18 @@ export interface JobUsage {
   completionTokens: number;
 }
 
+export interface JobImage {
+  b64?: string;
+  url?: string;
+  revisedPrompt?: string;
+}
+
 export interface JobResult {
   content: string;
   toolCalls: JobToolCall[];
   finishReason: "stop" | "length" | "tool_calls";
   embedding?: number[];
+  images?: JobImage[];
   usage?: JobUsage;
 }
 
@@ -87,7 +96,7 @@ function newJobId(): string {
 
 export interface DispatchOpts {
   organizationId: string;
-  task: "chat" | "embedding";
+  task: "chat" | "embedding" | "image";
   model: string;
   input: unknown;
   streaming: boolean;
@@ -95,6 +104,13 @@ export interface DispatchOpts {
   temperature?: number;
   tools?: unknown[];
   toolChoice?: unknown;
+  image?: {
+    size?: string;
+    n?: number;
+    quality?: string;
+    style?: string;
+    responseFormat?: "url" | "b64_json";
+  };
 }
 
 /**
@@ -125,6 +141,7 @@ export function dispatchJob(opts: DispatchOpts):
       temperature: opts.temperature,
       tools: opts.tools,
       toolChoice: opts.toolChoice,
+      image: opts.image,
     },
   };
   worker.ws.send(JSON.stringify(inferMsg));
@@ -276,6 +293,10 @@ export function handleJobMessage(msg: WorkerMessage, peerWorkerId: string): void
     const job = jobs.get(msg.jobId);
     if (!job || job.workerId !== peerWorkerId) return;
     job.embedding = msg.vector;
+  } else if (msg.type === "image") {
+    const job = jobs.get(msg.jobId);
+    if (!job || job.workerId !== peerWorkerId) return;
+    job.images = msg.images;
   } else if (msg.type === "done") {
     const job = jobs.get(msg.jobId);
     if (!job || job.workerId !== peerWorkerId) return;
@@ -313,6 +334,7 @@ export function handleJobMessage(msg: WorkerMessage, peerWorkerId: string): void
         toolCalls: finalToolCalls(job),
         finishReason: msg.finishReason,
         embedding: job.embedding,
+        images: job.images,
         usage: msg.usage,
       });
     }
