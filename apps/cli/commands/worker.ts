@@ -1,16 +1,9 @@
 import { defineCommand } from "citty";
-import { identityFilePath, loadIdentity, saveIdentity } from "../identity";
-import {
-  chatInference,
-  embeddingInference,
-  fetchAvailableModels,
-  getLoadedModel,
-  imageInference,
-  setBackendUrl,
-} from "../inference";
-import { ServerMessage, parseIncoming } from "../protocol";
-import type { ServerMessageType } from "../protocol";
 import env from "../env";
+import { identityFilePath, loadIdentity, saveIdentity } from "../identity";
+import { createInferenceClient } from "../inference";
+import { parseIncoming, ServerMessage } from "../protocol";
+import type { ServerMessageType, WorkerMessageType } from "../protocol";
 
 const start = defineCommand({
   meta: {
@@ -30,7 +23,6 @@ const start = defineCommand({
     backend: {
       type: "string",
       description: "Inference backend URL",
-      // Default to the env var
       default: env.getBackendUrl(),
     },
     concurrency: {
@@ -77,6 +69,8 @@ export const workerCommand = defineCommand({
   subCommands: { start },
 });
 
+type InferMessage = Extract<ServerMessageType, { type: "infer" }>;
+
 function runWorker(opts: {
   serverUrl: string;
   token: string;
@@ -89,11 +83,14 @@ function runWorker(opts: {
   // Append token as query param for WebSocket auth
   const wsUrl = `${serverUrl}${serverUrl.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
 
-  setBackendUrl(backend);
+  const client = createInferenceClient({ backendUrl: backend });
   console.log(`[worker] using backend at ${backend}`);
 
   const startTime = Date.now();
   let jobsCompleted = 0;
+  // Last model the worker successfully drove inference against. Reported in
+  // periodic stats so the server can show "currently running X" in the UI.
+  let loadedModel: string | null = null;
   let ws: WebSocket | null = null;
   let reconnectDelay = 1000;
   // In-flight jobs, keyed by jobId, so a server-initiated `cancel` message can
@@ -101,30 +98,29 @@ function runWorker(opts: {
   // running to completion for a consumer that's already gone.
   const inFlight = new Map<string, AbortController>();
 
-  setInterval(() => {
+  /** Send a typed protocol message if the socket is connected. Drops the
+   * message silently otherwise — calling `.send()` on a CLOSING/CLOSED socket
+   * throws, and during a reconnect cycle the server is already treating us as
+   * gone. The next post-reconnect `stats`/`models` tick will resync. */
+  function send(msg: WorkerMessageType): void {
     if (ws?.readyState === WebSocket.OPEN) {
-      ws.send(
-        JSON.stringify({
-          type: "stats",
-          loadedModel: getLoadedModel(),
-          jobsCompleted,
-          uptimeMs: Date.now() - startTime,
-        }),
-      );
+      ws.send(JSON.stringify(msg));
     }
+  }
+
+  setInterval(() => {
+    send({
+      type: "stats",
+      loadedModel,
+      jobsCompleted,
+      uptimeMs: Date.now() - startTime,
+    });
   }, 5000);
 
   async function sendModels(): Promise<void> {
     try {
-      const ids = await fetchAvailableModels();
-      if (ws?.readyState === WebSocket.OPEN) {
-        ws.send(
-          JSON.stringify({
-            type: "models",
-            models: ids.map((id) => ({ id })),
-          }),
-        );
-      }
+      const ids = await client.listModels();
+      send({ type: "models", models: ids.map((id) => ({ id })) });
     } catch (err) {
       console.error("[worker] failed to fetch models from backend:", (err as Error).message);
     }
@@ -162,23 +158,19 @@ function runWorker(opts: {
       reconnectDelay = 1000;
 
       if (identity) {
-        ws!.send(
-          JSON.stringify({
-            type: "register_resume",
-            workerId: identity.workerId,
-            secret: identity.secret,
-            maxConcurrent,
-            ...(name !== undefined ? { name } : {}),
-          }),
-        );
+        send({
+          type: "register_resume",
+          workerId: identity.workerId,
+          secret: identity.secret,
+          maxConcurrent,
+          ...(name !== undefined ? { name } : {}),
+        });
       } else {
-        ws!.send(
-          JSON.stringify({
-            type: "register_new",
-            maxConcurrent,
-            ...(name !== undefined ? { name } : {}),
-          }),
-        );
+        send({
+          type: "register_new",
+          maxConcurrent,
+          ...(name !== undefined ? { name } : {}),
+        });
       }
     };
 
@@ -201,7 +193,7 @@ function runWorker(opts: {
       }
 
       if (msg.type === "ping") {
-        ws!.send(JSON.stringify({ type: "pong" }));
+        send({ type: "pong" });
         return;
       }
 
@@ -242,56 +234,15 @@ function runWorker(opts: {
     };
   }
 
-  async function handleInfer(msg: Extract<ServerMessageType, { type: "infer" }>) {
-    const { jobId, task, model, input, options } = msg;
+  async function handleInfer(msg: InferMessage): Promise<void> {
+    const { jobId, model } = msg;
     const controller = new AbortController();
     inFlight.set(jobId, controller);
 
     try {
-      ws?.send(JSON.stringify({ type: "model_ready", jobId, model }));
-
-      if (task === "chat") {
-        const messages = input as unknown[];
-        for await (const chunk of chatInference(model, messages, options, controller.signal)) {
-          if ("done" in chunk) {
-            jobsCompleted++;
-            ws?.send(
-              JSON.stringify({
-                type: "done",
-                jobId,
-                finishReason: chunk.finishReason,
-                usage: chunk.usage,
-              }),
-            );
-          } else {
-            ws?.send(
-              JSON.stringify({
-                type: "delta",
-                jobId,
-                content: chunk.content,
-                toolCalls: chunk.toolCalls,
-              }),
-            );
-          }
-        }
-      } else if (task === "embedding") {
-        const embeddings = await embeddingInference(
-          model,
-          input as string | string[],
-          controller.signal,
-        );
-        ws?.send(JSON.stringify({ type: "embedding", jobId, vector: embeddings[0] }));
-        jobsCompleted++;
-        ws?.send(JSON.stringify({ type: "done", jobId, finishReason: "stop" }));
-      } else if (task === "image") {
-        const prompt = input as string;
-        const images = await imageInference(model, prompt, options?.image, controller.signal);
-        ws?.send(JSON.stringify({ type: "image", jobId, images }));
-        jobsCompleted++;
-        ws?.send(JSON.stringify({ type: "done", jobId, finishReason: "stop" }));
-      } else {
-        throw new Error(`Unknown task: ${task satisfies never}`);
-      }
+      send({ type: "model_ready", jobId, model });
+      await runTask(msg, controller.signal);
+      loadedModel = model;
     } catch (err) {
       // Swallow the fetch AbortError silently — the server already knows the
       // job was canceled and is no longer listening on this jobId. Anything
@@ -300,13 +251,79 @@ function runWorker(opts: {
         console.log(`[worker] job ${jobId} aborted`);
       } else {
         console.error(`[worker] inference error for job ${jobId}:`, err);
-        ws?.send(
-          JSON.stringify({ type: "error", jobId, message: (err as Error).message ?? "inference failed" }),
-        );
+        send({
+          type: "error",
+          jobId,
+          message: (err as Error).message ?? "inference failed",
+        });
       }
     } finally {
       inFlight.delete(jobId);
     }
+  }
+
+  async function runTask(msg: InferMessage, signal: AbortSignal): Promise<void> {
+    const { jobId, task, model, input, options } = msg;
+    switch (task) {
+      case "chat":
+        return runChat(jobId, model, input as unknown[], options, signal);
+      case "embedding":
+        return runOneShot(jobId, async () => {
+          const v = await client.embedding(model, input as string | string[], signal);
+          return { type: "embedding", jobId, vector: v[0] };
+        });
+      case "image":
+        return runOneShot(jobId, async () => {
+          const images = await client.image(model, input as string, options?.image, signal);
+          return { type: "image", jobId, images };
+        });
+      case "tts":
+        return runOneShot(jobId, async () => {
+          const audio = await client.speech(model, input as string, options?.tts, signal);
+          return { type: "audio", jobId, b64: audio.b64, mimeType: audio.mimeType };
+        });
+      default:
+        throw new Error(`Unknown task: ${task satisfies never}`);
+    }
+  }
+
+  async function runChat(
+    jobId: string,
+    model: string,
+    messages: unknown[],
+    options: InferMessage["options"],
+    signal: AbortSignal,
+  ): Promise<void> {
+    for await (const chunk of client.chat(model, messages, options, signal)) {
+      if ("done" in chunk) {
+        jobsCompleted++;
+        send({
+          type: "done",
+          jobId,
+          finishReason: chunk.finishReason,
+          usage: chunk.usage,
+        });
+      } else {
+        send({
+          type: "delta",
+          jobId,
+          content: chunk.content,
+          toolCalls: chunk.toolCalls,
+        });
+      }
+    }
+  }
+
+  /** Run a non-streaming task: await the inference, send its single result
+   * message, then a terminal `done`. Used for embedding, image, and tts. */
+  async function runOneShot(
+    jobId: string,
+    produce: () => Promise<WorkerMessageType>,
+  ): Promise<void> {
+    const result = await produce();
+    send(result);
+    jobsCompleted++;
+    send({ type: "done", jobId, finishReason: "stop" });
   }
 
   connect();

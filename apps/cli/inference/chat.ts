@@ -1,32 +1,3 @@
-/**
- * Inference engine that proxies to a local OpenAI-compatible endpoint (e.g. Ollama).
- *
- * The worker doesn't run inference itself — it forwards requests to whatever
- * is running on the configured backend URL and streams chunks back.
- */
-
-import env from "./env";
-
-let currentModel: string | null = null;
-let backendUrl = env.getBackendUrl(); // Ollama default
-
-export function setBackendUrl(url: string): void {
-  backendUrl = url.replace(/\/+$/, "");
-}
-
-export async function fetchAvailableModels(): Promise<string[]> {
-  const res = await fetch(`${backendUrl}/v1/models`);
-  if (!res.ok) {
-    throw new Error(`Backend returned ${res.status} from /v1/models`);
-  }
-  const json = (await res.json()) as { data: Array<{ id: string }> };
-  return json.data.map((m) => m.id);
-}
-
-export function getLoadedModel(): string | null {
-  return currentModel;
-}
-
 export interface ToolCallDelta {
   index: number;
   id?: string;
@@ -55,6 +26,7 @@ export interface ChatOptions {
  * (content text and/or tool_call slices) as they stream in.
  */
 export async function* chatInference(
+  backendUrl: string,
   model: string,
   messages: unknown[],
   options?: ChatOptions,
@@ -86,9 +58,10 @@ export async function* chatInference(
     throw new Error(`Backend returned ${res.status}: ${errBody}`);
   }
 
-  currentModel = model;
-
-  const reader = res.body!.getReader();
+  if (!res.body) {
+    throw new Error("Backend returned a response with no body");
+  }
+  const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   let finishReason: "stop" | "length" | "tool_calls" = "stop";
@@ -100,7 +73,8 @@ export async function* chatInference(
 
     buffer += decoder.decode(value, { stream: true });
     const lines = buffer.split("\n");
-    buffer = lines.pop()!;
+    // String.split always yields at least one element, so pop() is non-null.
+    buffer = lines.pop() ?? "";
 
     for (const line of lines) {
       const trimmed = line.trim();
@@ -156,81 +130,4 @@ export async function* chatInference(
   }
 
   yield { done: true, finishReason, usage };
-}
-
-export interface ImageOptions {
-  size?: string;
-  n?: number;
-  quality?: string;
-  style?: string;
-  responseFormat?: "url" | "b64_json";
-}
-
-export interface GeneratedImage {
-  b64?: string;
-  url?: string;
-  revisedPrompt?: string;
-}
-
-export async function imageInference(
-  model: string,
-  prompt: string,
-  options?: ImageOptions,
-  signal?: AbortSignal,
-): Promise<GeneratedImage[]> {
-  const body: Record<string, unknown> = { model, prompt };
-  if (options?.size !== undefined) body.size = options.size;
-  if (options?.n !== undefined) body.n = options.n;
-  if (options?.quality !== undefined) body.quality = options.quality;
-  if (options?.style !== undefined) body.style = options.style;
-  if (options?.responseFormat !== undefined) body.response_format = options.responseFormat;
-
-  const res = await fetch(`${backendUrl}/v1/images/generations`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal,
-  });
-
-  if (!res.ok) {
-    const errBody = await res.text();
-    throw new Error(`Backend returned ${res.status}: ${errBody}`);
-  }
-
-  currentModel = model;
-
-  const json = (await res.json()) as {
-    data?: Array<{ b64_json?: string; url?: string; revised_prompt?: string }>;
-  };
-  if (!Array.isArray(json.data)) {
-    throw new Error("Backend image response missing 'data' array");
-  }
-  return json.data.map((d) => ({
-    b64: d.b64_json,
-    url: d.url,
-    revisedPrompt: d.revised_prompt,
-  }));
-}
-
-export async function embeddingInference(
-  model: string,
-  input: string | string[],
-  signal?: AbortSignal,
-): Promise<number[][]> {
-  const res = await fetch(`${backendUrl}/v1/embeddings`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model, input }),
-    signal,
-  });
-
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Backend returned ${res.status}: ${body}`);
-  }
-
-  currentModel = model;
-
-  const json = (await res.json()) as { data: Array<{ embedding: number[] }> };
-  return json.data.map((d) => d.embedding);
 }

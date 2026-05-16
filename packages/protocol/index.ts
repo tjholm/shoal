@@ -78,6 +78,15 @@ export const WorkerMessage = z.discriminatedUnion("type", [
       }),
     ),
   }),
+  // TTS results. The backend returns raw audio bytes; the worker base64-encodes
+  // them so they fit in the JSON-only protocol. `mimeType` is taken from the
+  // backend's Content-Type when present, or derived from the requested format.
+  z.object({
+    type: z.literal("audio"),
+    jobId: z.string(),
+    b64: z.string(),
+    mimeType: z.string(),
+  }),
   z.object({
     type: z.literal("done"),
     jobId: z.string(),
@@ -159,7 +168,7 @@ export const ServerMessage = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("infer"),
     jobId: z.string(),
-    task: z.enum(["chat", "embedding", "image"]),
+    task: z.enum(["chat", "embedding", "image", "tts"]),
     model: z.string(),
     input: z.unknown(),
     options: z
@@ -178,6 +187,17 @@ export const ServerMessage = z.discriminatedUnion("type", [
             quality: z.string().optional(),
             style: z.string().optional(),
             responseFormat: z.enum(["url", "b64_json"]).optional(),
+          })
+          .optional(),
+        // TTS parameters. Forwarded to /v1/audio/speech in OpenAI shape.
+        // `responseFormat` is left as a free string because backends accept
+        // formats beyond the OpenAI set (e.g. mp3/opus/aac/flac/wav/pcm).
+        tts: z
+          .object({
+            voice: z.string().optional(),
+            responseFormat: z.string().optional(),
+            speed: z.number().optional(),
+            instructions: z.string().optional(),
           })
           .optional(),
       })

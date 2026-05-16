@@ -317,6 +317,64 @@ export async function handleImageGenerations(req: Request, key: VerifiedKey): Pr
   }
 }
 
+/** POST /v1/audio/speech */
+export async function handleSpeech(req: Request, key: VerifiedKey): Promise<Response> {
+  let body: Record<string, unknown>;
+  try {
+    body = (await req.json()) as Record<string, unknown>;
+  } catch {
+    return jsonError("Invalid JSON body", 400);
+  }
+
+  const model = body.model;
+  if (typeof model !== "string" || model.length === 0) {
+    return jsonError("Missing 'model' field", 400);
+  }
+
+  const input = body.input;
+  if (typeof input !== "string" || input.length === 0) {
+    return jsonError("Missing 'input' field", 400);
+  }
+
+  const voice = typeof body.voice === "string" ? body.voice : undefined;
+  const responseFormat = typeof body.response_format === "string" ? body.response_format : undefined;
+  const speed = typeof body.speed === "number" ? body.speed : undefined;
+  const instructions = typeof body.instructions === "string" ? body.instructions : undefined;
+
+  try {
+    const result = dispatchJob({
+      organizationId: key.organizationId,
+      task: "tts",
+      model,
+      input,
+      streaming: false,
+      tts: { voice, responseFormat, speed, instructions },
+    });
+
+    if (!("promise" in result)) {
+      return jsonError("Unexpected streaming result for tts", 500);
+    }
+
+    const jobResult: JobResult = await result.promise;
+    if (!jobResult.audio) {
+      return jsonError("Worker did not return audio", 500);
+    }
+
+    const bytes = Buffer.from(jobResult.audio.b64, "base64");
+    return new Response(bytes, {
+      headers: {
+        "Content-Type": jobResult.audio.mimeType,
+        "Content-Length": String(bytes.byteLength),
+      },
+    });
+  } catch (err) {
+    if (err instanceof ServiceUnavailableError) {
+      return jsonError(err.message, 503);
+    }
+    return jsonError((err as Error).message ?? "Internal error", 500);
+  }
+}
+
 /** GET /v1/models */
 export function handleModels(key: VerifiedKey): Response {
   const models = availableModels(key.organizationId).map((id) => ({

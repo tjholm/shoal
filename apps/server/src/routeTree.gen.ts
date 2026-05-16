@@ -19,6 +19,7 @@ import { Route as AuthedWorkersRouteImport } from './routes/_authed/workers'
 import { Route as AuthedMembersRouteImport } from './routes/_authed/members'
 import { Route as AuthedImagesRouteImport } from './routes/_authed/images'
 import { Route as AuthedChatRouteImport } from './routes/_authed/chat'
+import { Route as AuthedAudioRouteImport } from './routes/_authed/audio'
 import { Route as AuthedApiKeysRouteImport } from './routes/_authed/api-keys'
 import { Route as ApiWorkersStreamRouteImport } from './routes/api/workers.stream'
 import { Route as ApiV1ModelsRouteImport } from './routes/api/v1/models'
@@ -28,6 +29,7 @@ import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as AuthedWorkersWorkerIdRouteImport } from './routes/_authed/workers_.$workerId'
 import { Route as ApiV1ImagesGenerationsRouteImport } from './routes/api/v1/images.generations'
 import { Route as ApiV1ChatCompletionsRouteImport } from './routes/api/v1/chat.completions'
+import { Route as ApiV1AudioSpeechRouteImport } from './routes/api/v1/audio.speech'
 
 const SignUpRoute = SignUpRouteImport.update({
   id: '/sign-up',
@@ -79,6 +81,11 @@ const AuthedChatRoute = AuthedChatRouteImport.update({
   path: '/chat',
   getParentRoute: () => AuthedRoute,
 } as any)
+const AuthedAudioRoute = AuthedAudioRouteImport.update({
+  id: '/audio',
+  path: '/audio',
+  getParentRoute: () => AuthedRoute,
+} as any)
 const AuthedApiKeysRoute = AuthedApiKeysRouteImport.update({
   id: '/api-keys',
   path: '/api-keys',
@@ -124,12 +131,18 @@ const ApiV1ChatCompletionsRoute = ApiV1ChatCompletionsRouteImport.update({
   path: '/api/v1/chat/completions',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiV1AudioSpeechRoute = ApiV1AudioSpeechRouteImport.update({
+  id: '/api/v1/audio/speech',
+  path: '/api/v1/audio/speech',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthedIndexRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
   '/api-keys': typeof AuthedApiKeysRoute
+  '/audio': typeof AuthedAudioRoute
   '/chat': typeof AuthedChatRoute
   '/images': typeof AuthedImagesRoute
   '/members': typeof AuthedMembersRoute
@@ -142,6 +155,7 @@ export interface FileRoutesByFullPath {
   '/api/v1/messages': typeof ApiV1MessagesRoute
   '/api/v1/models': typeof ApiV1ModelsRoute
   '/api/workers/stream': typeof ApiWorkersStreamRoute
+  '/api/v1/audio/speech': typeof ApiV1AudioSpeechRoute
   '/api/v1/chat/completions': typeof ApiV1ChatCompletionsRoute
   '/api/v1/images/generations': typeof ApiV1ImagesGenerationsRoute
 }
@@ -149,6 +163,7 @@ export interface FileRoutesByTo {
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
   '/api-keys': typeof AuthedApiKeysRoute
+  '/audio': typeof AuthedAudioRoute
   '/chat': typeof AuthedChatRoute
   '/images': typeof AuthedImagesRoute
   '/members': typeof AuthedMembersRoute
@@ -162,6 +177,7 @@ export interface FileRoutesByTo {
   '/api/v1/messages': typeof ApiV1MessagesRoute
   '/api/v1/models': typeof ApiV1ModelsRoute
   '/api/workers/stream': typeof ApiWorkersStreamRoute
+  '/api/v1/audio/speech': typeof ApiV1AudioSpeechRoute
   '/api/v1/chat/completions': typeof ApiV1ChatCompletionsRoute
   '/api/v1/images/generations': typeof ApiV1ImagesGenerationsRoute
 }
@@ -171,6 +187,7 @@ export interface FileRoutesById {
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
   '/_authed/api-keys': typeof AuthedApiKeysRoute
+  '/_authed/audio': typeof AuthedAudioRoute
   '/_authed/chat': typeof AuthedChatRoute
   '/_authed/images': typeof AuthedImagesRoute
   '/_authed/members': typeof AuthedMembersRoute
@@ -184,6 +201,7 @@ export interface FileRoutesById {
   '/api/v1/messages': typeof ApiV1MessagesRoute
   '/api/v1/models': typeof ApiV1ModelsRoute
   '/api/workers/stream': typeof ApiWorkersStreamRoute
+  '/api/v1/audio/speech': typeof ApiV1AudioSpeechRoute
   '/api/v1/chat/completions': typeof ApiV1ChatCompletionsRoute
   '/api/v1/images/generations': typeof ApiV1ImagesGenerationsRoute
 }
@@ -194,6 +212,7 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/sign-up'
     | '/api-keys'
+    | '/audio'
     | '/chat'
     | '/images'
     | '/members'
@@ -206,6 +225,7 @@ export interface FileRouteTypes {
     | '/api/v1/messages'
     | '/api/v1/models'
     | '/api/workers/stream'
+    | '/api/v1/audio/speech'
     | '/api/v1/chat/completions'
     | '/api/v1/images/generations'
   fileRoutesByTo: FileRoutesByTo
@@ -213,6 +233,7 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/sign-up'
     | '/api-keys'
+    | '/audio'
     | '/chat'
     | '/images'
     | '/members'
@@ -226,6 +247,7 @@ export interface FileRouteTypes {
     | '/api/v1/messages'
     | '/api/v1/models'
     | '/api/workers/stream'
+    | '/api/v1/audio/speech'
     | '/api/v1/chat/completions'
     | '/api/v1/images/generations'
   id:
@@ -234,6 +256,7 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/sign-up'
     | '/_authed/api-keys'
+    | '/_authed/audio'
     | '/_authed/chat'
     | '/_authed/images'
     | '/_authed/members'
@@ -247,6 +270,7 @@ export interface FileRouteTypes {
     | '/api/v1/messages'
     | '/api/v1/models'
     | '/api/workers/stream'
+    | '/api/v1/audio/speech'
     | '/api/v1/chat/completions'
     | '/api/v1/images/generations'
   fileRoutesById: FileRoutesById
@@ -262,6 +286,7 @@ export interface RootRouteChildren {
   ApiV1MessagesRoute: typeof ApiV1MessagesRoute
   ApiV1ModelsRoute: typeof ApiV1ModelsRoute
   ApiWorkersStreamRoute: typeof ApiWorkersStreamRoute
+  ApiV1AudioSpeechRoute: typeof ApiV1AudioSpeechRoute
   ApiV1ChatCompletionsRoute: typeof ApiV1ChatCompletionsRoute
   ApiV1ImagesGenerationsRoute: typeof ApiV1ImagesGenerationsRoute
 }
@@ -338,6 +363,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedChatRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/audio': {
+      id: '/_authed/audio'
+      path: '/audio'
+      fullPath: '/audio'
+      preLoaderRoute: typeof AuthedAudioRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/api-keys': {
       id: '/_authed/api-keys'
       path: '/api-keys'
@@ -401,11 +433,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiV1ChatCompletionsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/v1/audio/speech': {
+      id: '/api/v1/audio/speech'
+      path: '/api/v1/audio/speech'
+      fullPath: '/api/v1/audio/speech'
+      preLoaderRoute: typeof ApiV1AudioSpeechRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 interface AuthedRouteChildren {
   AuthedApiKeysRoute: typeof AuthedApiKeysRoute
+  AuthedAudioRoute: typeof AuthedAudioRoute
   AuthedChatRoute: typeof AuthedChatRoute
   AuthedImagesRoute: typeof AuthedImagesRoute
   AuthedMembersRoute: typeof AuthedMembersRoute
@@ -416,6 +456,7 @@ interface AuthedRouteChildren {
 
 const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedApiKeysRoute: AuthedApiKeysRoute,
+  AuthedAudioRoute: AuthedAudioRoute,
   AuthedChatRoute: AuthedChatRoute,
   AuthedImagesRoute: AuthedImagesRoute,
   AuthedMembersRoute: AuthedMembersRoute,
@@ -438,6 +479,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiV1MessagesRoute: ApiV1MessagesRoute,
   ApiV1ModelsRoute: ApiV1ModelsRoute,
   ApiWorkersStreamRoute: ApiWorkersStreamRoute,
+  ApiV1AudioSpeechRoute: ApiV1AudioSpeechRoute,
   ApiV1ChatCompletionsRoute: ApiV1ChatCompletionsRoute,
   ApiV1ImagesGenerationsRoute: ApiV1ImagesGenerationsRoute,
 }
