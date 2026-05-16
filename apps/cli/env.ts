@@ -1,10 +1,11 @@
 const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:11434";
 
-function getBackendUrl(): string {
-  return BACKEND_URL;
+function getBackendUrls(): string[] {
+  return BACKEND_URL.split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
 }
 
 export default {
-    getBackendUrl,
-}
-
+  getBackendUrls,
+};

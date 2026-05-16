@@ -22,8 +22,8 @@ const start = defineCommand({
     },
     backend: {
       type: "string",
-      description: "Inference backend URL",
-      default: env.getBackendUrl(),
+      description:
+        "Inference backend URL. Repeat the flag or comma-separate to use multiple backends; jobs are routed per-model. Falls back to BACKEND_URL (comma-separated).",
     },
     concurrency: {
       type: "string",
@@ -36,7 +36,7 @@ const start = defineCommand({
         "Friendly name advertised to the server. Overwrites any name set via the dashboard on every connect.",
     },
   },
-  run({ args }) {
+  run({ args, rawArgs }) {
     const token = args.token ?? process.env.SHOAL_TOKEN;
     if (!token) {
       console.error(
@@ -51,10 +51,22 @@ const start = defineCommand({
       );
       process.exit(1);
     }
+    // citty's parser (mri) only keeps the LAST value when a flag is repeated,
+    // so for per-model routing we re-scan rawArgs to collect every --backend.
+    // Falling back to BACKEND_URL (comma-separated) preserves the pre-multi
+    // behavior for users still on a single backend.
+    const backendUrls = collectBackendArgs(rawArgs);
+    const resolved = backendUrls.length > 0 ? backendUrls : env.getBackendUrls();
+    if (resolved.length === 0) {
+      console.error(
+        "No backend URLs configured. Pass --backend <url> (repeat or comma-separate for multiple) or set BACKEND_URL.",
+      );
+      process.exit(1);
+    }
     runWorker({
       serverUrl: args.server,
       token,
-      backend: args.backend,
+      backendUrls: resolved,
       maxConcurrent,
       name: args.name,
     });
@@ -71,20 +83,43 @@ export const workerCommand = defineCommand({
 
 type InferMessage = Extract<ServerMessageType, { type: "infer" }>;
 
+/** Pull every `--backend X` / `--backend=X` occurrence out of the raw argv.
+ * Each value is also split on `,` so users can mix-and-match repetition and
+ * comma-separation without thinking about it. Empty entries are dropped. */
+function collectBackendArgs(rawArgs: string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < rawArgs.length; i++) {
+    const a = rawArgs[i];
+    let value: string | undefined;
+    if (a === "--backend") {
+      value = rawArgs[i + 1];
+      i++;
+    } else if (a?.startsWith("--backend=")) {
+      value = a.slice("--backend=".length);
+    }
+    if (value === undefined) continue;
+    for (const part of value.split(",")) {
+      const trimmed = part.trim();
+      if (trimmed.length > 0) out.push(trimmed);
+    }
+  }
+  return out;
+}
+
 function runWorker(opts: {
   serverUrl: string;
   token: string;
-  backend: string;
+  backendUrls: string[];
   maxConcurrent: number;
   name?: string;
 }): void {
-  const { serverUrl, token, backend, maxConcurrent, name } = opts;
+  const { serverUrl, token, backendUrls, maxConcurrent, name } = opts;
 
   // Append token as query param for WebSocket auth
   const wsUrl = `${serverUrl}${serverUrl.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
 
-  const client = createInferenceClient({ backendUrl: backend });
-  console.log(`[worker] using backend at ${backend}`);
+  const client = createInferenceClient({ backendUrls });
+  console.log(`[worker] using backend(s): ${backendUrls.join(", ")}`);
 
   const startTime = Date.now();
   let jobsCompleted = 0;
