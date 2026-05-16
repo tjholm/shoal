@@ -1,4 +1,5 @@
 import { and, db, eq, gte, schema, sql } from "@shoal/db";
+import type { ModelTask } from "@shoal/protocol";
 import {
 	allWorkers,
 	availableModels,
@@ -103,7 +104,8 @@ export const getDashboardAggregates = createServerFn({ method: "GET" })
 
 export const getWorkerCountsSnapshot = createServerFn({ method: "GET" })
 	.middleware([orgMiddleware])
-	.handler(async ({ context }): Promise<WorkerCountsSnapshot> => {
+	.inputValidator((data: { task?: ModelTask } | undefined) => data ?? {})
+	.handler(async ({ data, context }): Promise<WorkerCountsSnapshot> => {
 		const liveWorkers = allWorkers(context.orgId);
 		const busy = liveWorkers.filter((w) => w.inFlight > 0).length;
 
@@ -117,7 +119,7 @@ export const getWorkerCountsSnapshot = createServerFn({ method: "GET" })
 			busyCount: busy,
 			idleCount: liveWorkers.length - busy,
 			totalWorkerCount: Number(totalRows[0]?.count ?? 0),
-			models: availableModels(context.orgId),
+			models: availableModels(context.orgId, data.task),
 		};
 	});
 

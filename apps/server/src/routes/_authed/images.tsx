@@ -5,7 +5,7 @@ import { workerCountsSnapshotQuery } from "../../lib/queries";
 
 export const Route = createFileRoute("/_authed/images")({
 	loader: ({ context: { queryClient } }) =>
-		queryClient.ensureQueryData(workerCountsSnapshotQuery()),
+		queryClient.ensureQueryData(workerCountsSnapshotQuery("image")),
 	component: Images,
 });
 
@@ -23,7 +23,7 @@ type ResponseFormat = "b64_json" | "url";
 const DIMENSIONS = ["256", "512", "768", "1024", "1536", "1792"] as const;
 
 function Images() {
-	const { data } = useSuspenseQuery(workerCountsSnapshotQuery());
+	const { data } = useSuspenseQuery(workerCountsSnapshotQuery("image"));
 	const [model, setModel] = useState(data.models[0] ?? "");
 	const [prompt, setPrompt] = useState("");
 	const [width, setWidth] = useState("");

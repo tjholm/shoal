@@ -12,6 +12,7 @@
  * touching module-level state.
  */
 
+import type { WorkerModel } from "@shoal/protocol";
 import {
   type ChatChunk,
   chatInference,
@@ -36,7 +37,7 @@ export type {
 };
 
 export interface InferenceClient {
-  listModels(): Promise<string[]>;
+  listModels(): Promise<WorkerModel[]>;
   chat(
     model: string,
     messages: unknown[],
@@ -68,36 +69,36 @@ export function createInferenceClient(config: { backendUrls: string[] }): Infere
   }
   const backendUrls = config.backendUrls.map((u) => u.replace(/\/+$/, ""));
 
-  // Per-backend snapshot of advertised model ids, rebuilt on every
+  // Per-backend snapshot of advertised models, rebuilt on every
   // listModels() call. Kept as `backend -> models` (not `model -> backend`)
   // so we don't lose visibility into which other backends also serve a
   // given model — the resolver walks `backendUrls` in configured order and
   // picks the first match, which gives users a deterministic primary while
   // leaving room to fall through to a secondary backend on failure.
-  const modelsByBackend = new Map<string, Set<string>>();
+  const modelsByBackend = new Map<string, Map<string, WorkerModel>>();
 
-  async function refreshModels(): Promise<string[]> {
+  async function refreshModels(): Promise<WorkerModel[]> {
     modelsByBackend.clear();
-    const ordered: string[] = [];
+    const ordered: WorkerModel[] = [];
     const seen = new Set<string>();
     // Sequential, not parallel: first-configured-wins for the returned union
     // requires deterministic iteration, and per-backend failures shouldn't
     // mask each other in an aggregated rejection.
     for (const url of backendUrls) {
       try {
-        const ids = await fetchAvailableModels(url);
-        modelsByBackend.set(url, new Set(ids));
-        for (const id of ids) {
-          if (!seen.has(id)) {
-            seen.add(id);
-            ordered.push(id);
+        const models = await fetchAvailableModels(url);
+        modelsByBackend.set(url, new Map(models.map((m) => [m.id, m])));
+        for (const m of models) {
+          if (!seen.has(m.id)) {
+            seen.add(m.id);
+            ordered.push(m);
           }
         }
       } catch (err) {
-        // Record an empty set so this backend is still "known" — without it
+        // Record an empty map so this backend is still "known" — without it
         // a stale resolver entry could keep routing to a backend whose model
         // list we never managed to read.
-        modelsByBackend.set(url, new Set());
+        modelsByBackend.set(url, new Map());
         console.error(
           `[worker] failed to fetch models from ${url}:`,
           (err as Error).message,
@@ -123,7 +124,7 @@ export function createInferenceClient(config: { backendUrls: string[] }): Infere
     const url = pickBackend(model);
     if (!url) {
       const known = new Set<string>();
-      for (const set of modelsByBackend.values()) for (const id of set) known.add(id);
+      for (const map of modelsByBackend.values()) for (const id of map.keys()) known.add(id);
       throw new Error(
         `No configured backend serves model "${model}". ` +
           (known.size > 0

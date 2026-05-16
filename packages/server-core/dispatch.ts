@@ -135,9 +135,11 @@ export interface DispatchOpts {
 export function dispatchJob(opts: DispatchOpts):
   | { jobId: string; stream: ReadableStream<StreamEvent> }
   | { jobId: string; promise: Promise<JobResult> } {
-  const worker = pickWorker(opts.model, opts.organizationId);
+  const worker = pickWorker(opts.model, opts.organizationId, opts.task);
   if (!worker) {
-    throw new ServiceUnavailableError("No workers available");
+    throw new ServiceUnavailableError(
+      `No workers available for model "${opts.model}" task "${opts.task}"`,
+    );
   }
 
   const jobId = newJobId();

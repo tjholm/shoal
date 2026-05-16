@@ -108,39 +108,127 @@ export const WorkerMessage = z.discriminatedUnion("type", [
   }),
   z.object({
     type: z.literal("models"),
-    // Either the legacy `string[]` (old workers) or the new `{ id }[]` (current
-    // workers). A given worker build only ever sends one form, so this is a
-    // union of two array shapes rather than an array of a union — the wire
-    // payload is never mixed. TODO(remove-legacy-models): drop the string
-    // variant once all workers have shipped with the object form.
+    // Either the legacy `string[]` (old workers) or the new object form with
+    // optional purpose/capabilities (current workers). A given worker build
+    // only ever sends one form, so this is a union of two array shapes rather
+    // than an array of a union — the wire payload is never mixed.
+    // TODO(remove-legacy-models): drop the string variant once all workers
+    // have shipped with the object form.
     models: z.union([
       z.array(z.string()),
-      z.array(z.object({ id: z.string() })),
+      z.array(
+        z.object({
+          id: z.string(),
+          // Primary modality (see WorkerModel docs). Absent = unknown.
+          purpose: z.enum(["chat", "embedding", "image", "tts"]).optional(),
+          // Feature flags applicable to the purpose (see WorkerModel docs).
+          // Absent = unknown; present-but-empty = advertised as supporting
+          // no flags.
+          capabilities: z.array(z.enum(["tools", "vision", "thinking"])).optional(),
+        }),
+      ),
     ]),
   }),
   z.object({ type: z.literal("pong") }),
 ]);
 export type WorkerMessage = z.infer<typeof WorkerMessage>;
 
+/** Inference tasks a worker can route to a backend. Mirrors the `task` field
+ *  on the `infer` server-to-worker message. */
+export type ModelTask = "chat" | "embedding" | "image" | "tts";
+
+/** Primary modality of a model. One-to-one with the inference tasks the server
+ *  dispatches; a chat request must land on a `purpose: "chat"` model, etc. */
+export type ModelPurpose = "chat" | "embedding" | "image" | "tts";
+
+/** Feature flags that ride on top of a purpose. Open-by-convention but locked
+ *  to a normalized vocabulary at the protocol layer so the server and UI work
+ *  against one stable set of strings. Add a value here when a new backend
+ *  capability becomes routable or display-worthy. */
+export type ModelCapability = "tools" | "vision" | "thinking";
+
+/** Required model purpose for a given inference task. The server consults this
+ *  when picking a worker so a chat job is never dispatched to a TTS-only model. */
+export const TASK_PURPOSE: Record<ModelTask, ModelPurpose> = {
+  chat: "chat",
+  embedding: "embedding",
+  image: "image",
+  tts: "tts",
+};
+
 /**
  * Canonical, normalized form of a model entry as stored on the server and
  * surfaced through the API/UI. Workers send either a bare string (deprecated)
  * or this object on the wire — `normalizeWorkerModels` collapses both into
- * this shape. Future capability fields (context window, family, etc.) will be
- * added here as optional properties.
+ * this shape.
+ *
+ * `purpose` and `capabilities` use a deliberate three-state convention:
+ *   - `undefined` → the worker could not determine the field (backend doesn't
+ *                   advertise capability metadata). Server-side enforcement
+ *                   MUST treat this as "permit" so unsupported backends stay
+ *                   usable.
+ *   - present     → use the value verbatim. A populated `purpose` that doesn't
+ *                   match the requested task is an explicit mismatch and
+ *                   dispatch refuses the worker.
  */
 export interface WorkerModel {
   id: string;
+  purpose?: ModelPurpose;
+  capabilities?: ModelCapability[];
+}
+
+type WireModel =
+  | string
+  | {
+      id: string;
+      purpose?: ModelPurpose;
+      capabilities?: ModelCapability[];
+    };
+
+/**
+ * Collapse the per-worker views of the same model id into one display entry.
+ * Conservative merge — only surface metadata every advertising worker agrees
+ * on:
+ *   - `purpose` populated only when all defined values agree (workers that
+ *     left it undefined abstain).
+ *   - `capabilities` is the intersection across every worker that reported
+ *     capabilities; workers with undefined capabilities abstain.
+ *
+ * The result is "what we can confidently say is true everywhere this model
+ * runs", which is the right surface for a server-wide listing.
+ */
+export function mergeModelViews(entries: ReadonlyArray<WorkerModel>): WorkerModel {
+  const id = entries[0].id;
+
+  const purposes = new Set<ModelPurpose>();
+  for (const e of entries) if (e.purpose !== undefined) purposes.add(e.purpose);
+  const purpose = purposes.size === 1 ? [...purposes][0] : undefined;
+
+  const capContributors = entries.filter((e) => e.capabilities !== undefined);
+  let capabilities: ModelCapability[] | undefined;
+  if (capContributors.length > 0) {
+    const first = capContributors[0].capabilities as ModelCapability[];
+    capabilities = first.filter((c) =>
+      capContributors.every((e) =>
+        (e.capabilities as ModelCapability[]).includes(c),
+      ),
+    );
+  }
+
+  const out: WorkerModel = { id };
+  if (purpose !== undefined) out.purpose = purpose;
+  if (capabilities !== undefined) out.capabilities = capabilities;
+  return out;
 }
 
 /**
- * Collapse the legacy `string[]` and new `{ id }[]` wire forms into
+ * Collapse the legacy `string[]` and new object wire forms into
  * `WorkerModel[]`. Returns the normalized list plus a `legacy` flag so the
  * caller can log a one-time deprecation notice per message.
  * TODO(remove-legacy-models): drop the string branch and the `legacy` flag.
  */
 export function normalizeWorkerModels(
-  models: ReadonlyArray<string> | ReadonlyArray<{ id: string }>,
+  models: ReadonlyArray<WireModel>,
 ): { models: WorkerModel[]; legacy: boolean } {
   if (models.length === 0) return { models: [], legacy: false };
   if (typeof models[0] === "string") {
@@ -149,8 +237,14 @@ export function normalizeWorkerModels(
       legacy: true,
     };
   }
+  const objs = models as ReadonlyArray<Exclude<WireModel, string>>;
   return {
-    models: (models as ReadonlyArray<{ id: string }>).map((m) => ({ id: m.id })),
+    models: objs.map((m) => {
+      const out: WorkerModel = { id: m.id };
+      if (m.purpose !== undefined) out.purpose = m.purpose;
+      if (m.capabilities !== undefined) out.capabilities = m.capabilities;
+      return out;
+    }),
     legacy: false,
   };
 }

@@ -5,7 +5,7 @@ import { workerCountsSnapshotQuery } from "../../lib/queries";
 
 export const Route = createFileRoute("/_authed/audio")({
 	loader: ({ context: { queryClient } }) =>
-		queryClient.ensureQueryData(workerCountsSnapshotQuery()),
+		queryClient.ensureQueryData(workerCountsSnapshotQuery("tts")),
 	component: Audio,
 });
 
@@ -17,7 +17,7 @@ const VOICES = ["alloy", "echo", "fable", "onyx", "nova", "shimmer"] as const;
 const FORMATS = ["mp3", "opus", "aac", "flac", "wav", "pcm"] as const;
 
 function Audio() {
-	const { data } = useSuspenseQuery(workerCountsSnapshotQuery());
+	const { data } = useSuspenseQuery(workerCountsSnapshotQuery("tts"));
 	const [model, setModel] = useState(data.models[0] ?? "");
 	const [text, setText] = useState("");
 	const [voice, setVoice] = useState<string>("alloy");

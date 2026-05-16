@@ -3,6 +3,7 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { ClientOnly, createFileRoute, Link } from "@tanstack/react-router";
 import { Pencil, Trash2 } from "lucide-react";
 import { useState } from "react";
+import { ModelChip } from "../../components/ModelChip";
 import {
 	Dialog,
 	DialogContent,
@@ -272,12 +273,7 @@ function WorkerCard({
 					</p>
 					<div className="flex flex-wrap gap-1.5">
 						{worker.availableModels.map((model) => (
-							<span
-								key={model.id}
-								className="rounded-full border border-[var(--chip-line)] bg-[var(--chip-bg)] px-2.5 py-0.5 text-xs text-[var(--sea-ink)]"
-							>
-								{model.id}
-							</span>
+							<ModelChip key={model.id} model={model} size="sm" />
 						))}
 					</div>
 				</div>

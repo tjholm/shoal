@@ -1,3 +1,4 @@
+import type { ModelTask } from "@shoal/protocol";
 import { queryOptions } from "@tanstack/react-query";
 import { listApiKeys } from "../server/functions/api-keys";
 import { getServerConfig } from "../server/functions/config";
@@ -54,10 +55,13 @@ export const dashboardAggregatesQuery = () =>
 		staleTime: 30_000,
 	});
 
-export const workerCountsSnapshotQuery = () =>
+export const workerCountsSnapshotQuery = (task?: ModelTask) =>
 	queryOptions({
-		queryKey: ["workers", "counts-snapshot"] as const,
-		queryFn: () => getWorkerCountsSnapshot(),
+		queryKey: ["workers", "counts-snapshot", task ?? "all"] as const,
+		queryFn: () =>
+			task !== undefined
+				? getWorkerCountsSnapshot({ data: { task } })
+				: getWorkerCountsSnapshot(),
 		// Only consumed by the SSR fallback before `workersCollection` hydrates;
 		// the live collection is the source of truth on the client. Never refetch.
 		staleTime: Infinity,

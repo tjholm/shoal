@@ -1,5 +1,11 @@
 import { and, db, desc, eq, schema } from "@shoal/db";
-import { normalizeWorkerModels, type WorkerMessage, type WorkerModel } from "@shoal/protocol";
+import {
+  type ModelTask,
+  normalizeWorkerModels,
+  TASK_PURPOSE,
+  type WorkerMessage,
+  type WorkerModel,
+} from "@shoal/protocol";
 
 /** Minimal WebSocket interface — works with both Bun ServerWebSocket and browser WebSocket. */
 interface WS {
@@ -380,14 +386,35 @@ export function updateWorkerModels(
   if (changed) emit(w.organizationId, { type: "live", workerId });
 }
 
-export function pickWorker(model: string, organizationId: string): WorkerState | null {
+/** True when the worker advertises this model AND its declared purpose either
+ *  matches the requested task or is unknown. An explicit purpose mismatch
+ *  filters the worker out — that's the enforcement contract. */
+function workerServesTask(
+  w: WorkerState,
+  model: string,
+  task: ModelTask,
+): boolean {
+  const required = TASK_PURPOSE[task];
+  for (const m of w.availableModels) {
+    if (m.id !== model) continue;
+    if (m.purpose === undefined) return true;
+    return m.purpose === required;
+  }
+  return false;
+}
+
+export function pickWorker(
+  model: string,
+  organizationId: string,
+  task: ModelTask,
+): WorkerState | null {
   let warmBest: WorkerState | null = null;
   let coldBest: WorkerState | null = null;
 
   for (const w of workers.values()) {
     if (w.organizationId !== organizationId) continue;
     if (w.inFlight >= w.maxConcurrent) continue;
-    if (!w.availableModels.some((m) => m.id === model)) continue;
+    if (!workerServesTask(w, model, task)) continue;
 
     if (w.loadedModel === model) {
       if (!warmBest || w.inFlight < warmBest.inFlight) warmBest = w;
@@ -399,11 +426,22 @@ export function pickWorker(model: string, organizationId: string): WorkerState |
   return warmBest ?? coldBest;
 }
 
-export function availableModels(organizationId: string): string[] {
+/** All distinct model ids advertised by online workers in the org. When `task`
+ *  is provided, filters to models whose declared purpose matches (or is
+ *  unknown) — the OpenAI surface uses this so a chat catalog request doesn't
+ *  list TTS-only models. */
+export function availableModels(
+  organizationId: string,
+  task?: ModelTask,
+): string[] {
+  const required = task !== undefined ? TASK_PURPOSE[task] : undefined;
   const models = new Set<string>();
   for (const w of workers.values()) {
     if (w.organizationId !== organizationId) continue;
-    for (const m of w.availableModels) models.add(m.id);
+    for (const m of w.availableModels) {
+      if (required !== undefined && m.purpose !== undefined && m.purpose !== required) continue;
+      models.add(m.id);
+    }
   }
   return [...models];
 }

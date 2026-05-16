@@ -16,7 +16,7 @@ import { workerCountsSnapshotQuery } from "../../lib/queries";
 
 export const Route = createFileRoute("/_authed/chat")({
 	loader: ({ context: { queryClient } }) =>
-		queryClient.ensureQueryData(workerCountsSnapshotQuery()),
+		queryClient.ensureQueryData(workerCountsSnapshotQuery("chat")),
 	component: Chat,
 });
 
@@ -63,7 +63,7 @@ const browserTools = {
 };
 
 function Chat() {
-	const { data } = useSuspenseQuery(workerCountsSnapshotQuery());
+	const { data } = useSuspenseQuery(workerCountsSnapshotQuery("chat"));
 	const [model, setModel] = useState(data.models[0] ?? "");
 	const [format, setFormat] = useState<WireFormat>("openai");
 	const [input, setInput] = useState("");

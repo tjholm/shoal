@@ -154,8 +154,8 @@ function runWorker(opts: {
 
   async function sendModels(): Promise<void> {
     try {
-      const ids = await client.listModels();
-      send({ type: "models", models: ids.map((id) => ({ id })) });
+      const models = await client.listModels();
+      send({ type: "models", models });
     } catch (err) {
       console.error("[worker] failed to fetch models from backend:", (err as Error).message);
     }

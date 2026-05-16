@@ -1,3 +1,4 @@
+import { mergeModelViews, type WorkerModel } from "@shoal/protocol";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { ClientOnly, createFileRoute, Link } from "@tanstack/react-router";
@@ -10,6 +11,7 @@ import {
 	XAxis,
 	YAxis,
 } from "recharts";
+import { ModelChip } from "../../components/ModelChip";
 import { workersCollection } from "../../lib/collections";
 import {
 	dashboardAggregatesQuery,
@@ -121,7 +123,11 @@ function Dashboard() {
 			<ClientOnly
 				fallback={
 					<>
-						<AvailableModelsSection models={counts.models} />
+						{/* SSR fallback: snapshot only carries ids; capability icons appear
+						    once the SSE-backed `LiveBottomSections` swaps in. */}
+						<AvailableModelsSection
+							models={counts.models.map((id) => ({ id }))}
+						/>
 						<GettingStartedSection totalWorkerCount={counts.totalWorkerCount} />
 					</>
 				}
@@ -190,13 +196,21 @@ function LiveBottomSections() {
 		q.from({ worker: workersCollection }),
 	);
 	const list = workers ?? [];
-	const models = Array.from(
-		new Set(
-			list
-				.filter((w) => w.online)
-				.flatMap((w) => w.availableModels.map((m) => m.id)),
-		),
-	);
+
+	// Group every online worker's view of each model id, then collapse each
+	// group to a single chip via the conservative merge (only show what all
+	// advertising workers agree on).
+	const byId = new Map<string, WorkerModel[]>();
+	for (const w of list) {
+		if (!w.online) continue;
+		for (const m of w.availableModels) {
+			const arr = byId.get(m.id);
+			if (arr) arr.push(m);
+			else byId.set(m.id, [m]);
+		}
+	}
+	const models = [...byId.values()].map(mergeModelViews);
+
 	return (
 		<>
 			<AvailableModelsSection models={models} />
@@ -205,19 +219,14 @@ function LiveBottomSections() {
 	);
 }
 
-function AvailableModelsSection({ models }: { models: string[] }) {
+function AvailableModelsSection({ models }: { models: WorkerModel[] }) {
 	if (models.length === 0) return null;
 	return (
 		<section className="island-shell mt-6 rounded-sm p-6">
 			<p className="island-kicker mb-3">Available Models</p>
 			<div className="flex flex-wrap gap-2">
 				{models.map((model) => (
-					<span
-						key={model}
-						className="rounded-full border border-[var(--chip-line)] bg-[var(--chip-bg)] px-3 py-1 text-sm text-[var(--sea-ink)]"
-					>
-						{model}
-					</span>
+					<ModelChip key={model.id} model={model} size="md" />
 				))}
 			</div>
 		</section>
