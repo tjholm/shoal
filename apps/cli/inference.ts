@@ -5,8 +5,10 @@
  * is running on the configured backend URL and streams chunks back.
  */
 
+import env from "./env";
+
 let currentModel: string | null = null;
-let backendUrl = "http://localhost:11434"; // Ollama default
+let backendUrl = env.getBackendUrl(); // Ollama default
 
 export function setBackendUrl(url: string): void {
   backendUrl = url.replace(/\/+$/, "");

@@ -9,6 +9,7 @@ import {
 } from "../inference";
 import { ServerMessage, parseIncoming } from "../protocol";
 import type { ServerMessageType } from "../protocol";
+import env from "../env";
 
 const start = defineCommand({
   meta: {
@@ -28,7 +29,8 @@ const start = defineCommand({
     backend: {
       type: "string",
       description: "Inference backend URL",
-      default: "http://localhost:11434",
+      // Default to the env var
+      default: env.getBackendUrl(),
     },
     concurrency: {
       type: "string",
