@@ -6,8 +6,9 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import {
 	DirectChatTransport,
 	stepCountIs,
-	ToolLoopAgent,
 	tool,
+	ToolLoopAgent,
+	type ToolSet,
 	type UIMessage,
 } from "ai";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -16,7 +17,11 @@ import { workerCountsSnapshotQuery } from "../../lib/queries";
 
 export const Route = createFileRoute("/_authed/chat")({
 	loader: ({ context: { queryClient } }) =>
-		queryClient.ensureQueryData(workerCountsSnapshotQuery("chat")),
+		Promise.all([
+			queryClient.ensureQueryData(workerCountsSnapshotQuery("chat")),
+			queryClient.ensureQueryData(workerCountsSnapshotQuery("image")),
+			queryClient.ensureQueryData(workerCountsSnapshotQuery("tts")),
+		]),
 	component: Chat,
 });
 
@@ -36,34 +41,156 @@ const internalFetch: typeof fetch = (input, init) => {
 	return fetch(input, { ...init, headers, credentials: "same-origin" });
 };
 
-const browserTools = {
-	get_current_time: tool({
-		description: "Get the current time as an ISO-8601 timestamp.",
-		inputSchema: z.object({}),
-		execute: async () => ({ now: new Date().toISOString() }),
-	}),
-	evaluate_math: tool({
+/** Output shape returned by media-generation tools (`generate_image`,
+ *  `generate_audio`). Kept narrow so ToolCallView can recognize it and render
+ *  the payload inline — image vs. audio is dispatched on the mime prefix. */
+interface GenerateMediaOutput {
+	model: string;
+	mimeType: string;
+	b64: string;
+}
+
+/** Build a `generate_image` tool that lets the chat model invoke whichever
+ *  image-purpose backend is online. The list of usable image models is
+ *  encoded as an enum on `model` so the LLM picks per-call. Returns null
+ *  when no image models are available — the caller should omit the tool
+ *  entirely in that case so the tool schema never claims a capability we
+ *  can't actually fulfill. */
+function makeGenerateImageTool(imageModels: string[]) {
+	if (imageModels.length === 0) return null;
+	const [first, ...rest] = imageModels;
+	// z.enum requires a non-empty tuple; build it that way explicitly so
+	// TypeScript can prove it.
+	const modelEnum = z.enum([first, ...rest] as [string, ...string[]]);
+	return tool({
 		description:
-			"Evaluate a basic arithmetic expression. Supports + - * / parentheses and decimal numbers. No variables, no functions.",
+			"Generate an image from a text prompt. Call this when the user asks " +
+			"you to make, draw, generate, or visualize an image. Pick the model " +
+			"whose id best fits the request, or the first one if they're equivalent.",
 		inputSchema: z.object({
-			expression: z.string().describe('e.g. "(2 + 3) * 4"'),
+			model: modelEnum.describe("Image-generation model id to use."),
+			prompt: z
+				.string()
+				.describe(
+					"Concrete description of the image. Include subject, style, " +
+						"composition, and notable details.",
+				),
+			size: z
+				.enum(["256x256", "512x512", "1024x1024"])
+				.default("512x512")
+				.describe("Output dimensions. Use 1024x1024 for higher quality."),
 		}),
-		execute: async ({ expression }) => {
-			if (!/^[\d+\-*/().\s]+$/.test(expression)) {
-				return { error: "expression contains unsupported characters" };
+		execute: async ({ model, prompt, size }): Promise<GenerateMediaOutput> => {
+			const res = await internalFetch(
+				`${window.location.origin}/api/v1/images/generations`,
+				{
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						model,
+						prompt,
+						size,
+						n: 1,
+						response_format: "b64_json",
+					}),
+				},
+			);
+			if (!res.ok) {
+				const detail = await res.text();
+				throw new Error(`image generation failed (${res.status}): ${detail}`);
 			}
-			try {
-				const value = Function(`"use strict"; return (${expression});`)();
-				return { result: value };
-			} catch (err) {
-				return { error: (err as Error).message };
+			const body = (await res.json()) as {
+				data?: Array<{ b64_json?: string; url?: string }>;
+			};
+			const first = body.data?.[0];
+			if (!first?.b64_json) {
+				// We asked for b64_json; if the backend returned only `url`, surface
+				// that explicitly rather than guessing a fetch-and-encode path.
+				throw new Error(
+					"image generation succeeded but backend returned no b64 payload",
+				);
 			}
+			return { model, mimeType: "image/png", b64: first.b64_json };
 		},
-	}),
-};
+	});
+}
+
+/** Build a `generate_audio` tool that lets the chat model invoke whichever
+ *  tts-purpose backend is online. Voice is a free-form string because voice
+ *  vocabularies vary across backends (OpenAI's six voices vs kokoro's named
+ *  set). Returns null when no tts models are available. */
+function makeGenerateAudioTool(ttsModels: string[]) {
+	if (ttsModels.length === 0) return null;
+	const [first, ...rest] = ttsModels;
+	const modelEnum = z.enum([first, ...rest] as [string, ...string[]]);
+	return tool({
+		description:
+			"Generate spoken audio from text. Call this when the user asks you " +
+			"to speak, narrate, read aloud, or produce a voice clip. Pick the " +
+			"model whose id best fits the request, or the first one otherwise.",
+		inputSchema: z.object({
+			model: modelEnum.describe("Text-to-speech model id to use."),
+			input: z.string().describe("Text to speak."),
+			voice: z
+				.string()
+				.optional()
+				.describe(
+					"Voice name. OpenAI-compatible backends accept one of " +
+						"alloy / echo / fable / onyx / nova / shimmer; other backends " +
+						"(e.g. kokoro) have their own voice catalog. Omit to use the " +
+						"backend's default.",
+				),
+		}),
+		execute: async ({ model, input, voice }): Promise<GenerateMediaOutput> => {
+			const body: Record<string, unknown> = {
+				model,
+				input,
+				response_format: "mp3",
+			};
+			if (voice) body.voice = voice;
+			const res = await internalFetch(
+				`${window.location.origin}/api/v1/audio/speech`,
+				{
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify(body),
+				},
+			);
+			if (!res.ok) {
+				const detail = await res.text();
+				throw new Error(`audio generation failed (${res.status}): ${detail}`);
+			}
+			// /v1/audio/speech returns raw audio bytes. UIMessage parts are
+			// JSON-serializable, so encode to base64 for the tool output.
+			const buf = await res.arrayBuffer();
+			const b64 = arrayBufferToBase64(buf);
+			return { model, mimeType: "audio/mpeg", b64 };
+		},
+	});
+}
+
+/** Base64-encode an ArrayBuffer in a way that works in both the browser and
+ *  Bun. `btoa` requires a binary string; we chunk the conversion so a multi-
+ *  megabyte audio clip doesn't blow the call stack via spread. */
+function arrayBufferToBase64(buf: ArrayBuffer): string {
+	const bytes = new Uint8Array(buf);
+	const chunkSize = 0x8000;
+	let binary = "";
+	for (let i = 0; i < bytes.length; i += chunkSize) {
+		binary += String.fromCharCode.apply(
+			null,
+			bytes.subarray(i, i + chunkSize) as unknown as number[],
+		);
+	}
+	return btoa(binary);
+}
 
 function Chat() {
 	const { data } = useSuspenseQuery(workerCountsSnapshotQuery("chat"));
+	const { data: imageData } = useSuspenseQuery(
+		workerCountsSnapshotQuery("image"),
+	);
+	const { data: ttsData } = useSuspenseQuery(workerCountsSnapshotQuery("tts"));
 	const [model, setModel] = useState(data.models[0] ?? "");
 	const [format, setFormat] = useState<WireFormat>("openai");
 	const [input, setInput] = useState("");
@@ -75,9 +202,11 @@ function Chat() {
 	const [hydrated, setHydrated] = useState(false);
 	useEffect(() => setHydrated(true), []);
 
-	// Rebuild the agent whenever the model or wire format change. useChat's
-	// transport prop is read at hook-init time, so we also force-remount the
-	// hook by keying on these values below.
+	// Rebuild the agent whenever the model, wire format, or image-model set
+	// change. useChat's transport prop is read at hook-init time, so we also
+	// force-remount the hook by keying on these values below. tanstack-query
+	// gives us a stable `imageData.models` reference until the snapshot
+	// refetches, so depending on it directly doesn't churn the agent.
 	const agent = useMemo(() => {
 		if (!hydrated || !model) return null;
 		// openai-compat constructs request URLs with `new URL(...)`, which rejects
@@ -96,12 +225,25 @@ function Chat() {
 						fetch: internalFetch,
 					})(model);
 
+		const generateImage = makeGenerateImageTool(imageData.models);
+		const generateAudio = makeGenerateAudioTool(ttsData.models);
+		// Widen to ToolSet at construction: ToolLoopAgent is invariant over its
+		// tool set, so the union of present/absent media tools can't be assigned
+		// to ChatInnerProps without a widening cast. ChatInner never indexes
+		// tools by name, so the looser type loses nothing it needs. When neither
+		// image nor tts models are online the agent runs with no tools at all,
+		// which is the same shape as a plain chat session.
+		const tools: ToolSet = {
+			...(generateImage ? { generate_image: generateImage } : {}),
+			...(generateAudio ? { generate_audio: generateAudio } : {}),
+		};
+
 		return new ToolLoopAgent({
 			model: languageModel,
-			tools: browserTools,
+			tools,
 			stopWhen: stepCountIs(5),
 		});
-	}, [hydrated, model, format]);
+	}, [hydrated, model, format, imageData.models, ttsData.models]);
 
 	if (agent) {
 		return (
@@ -156,7 +298,7 @@ function NoWorkersEmpty() {
 }
 
 interface ChatInnerProps {
-	agent: ToolLoopAgent<never, typeof browserTools>;
+	agent: ToolLoopAgent<never, ToolSet>;
 	data: { models: string[] };
 	model: string;
 	setModel: (m: string) => void;
@@ -206,8 +348,7 @@ function ChatInner({
 			>
 				{messages.length === 0 && (
 					<p className="text-center text-sm text-[var(--sea-ink-soft)]">
-						Send a message to get started. Try “What is (12+7)*3?” to exercise
-						tool calling.
+						Send a message to get started.
 					</p>
 				)}
 				{messages.map((m, i) => (
@@ -475,15 +616,65 @@ function ToolCallView({ part }: { part: UIMessage["parts"][number] }) {
 					{JSON.stringify(p.input, null, 2)}
 				</pre>
 			)}
-			{p.output !== undefined && (
-				<pre className="m-0 overflow-x-auto whitespace-pre-wrap font-mono text-emerald-300">
-					→ {JSON.stringify(p.output, null, 2)}
-				</pre>
-			)}
+			{p.output !== undefined &&
+				(isMediaOutput(p.output) ? (
+					<MediaOutputView output={p.output} />
+				) : (
+					<pre className="m-0 overflow-x-auto whitespace-pre-wrap font-mono text-emerald-300">
+						→ {JSON.stringify(p.output, null, 2)}
+					</pre>
+				))}
 			{p.errorText && (
 				<pre className="m-0 overflow-x-auto whitespace-pre-wrap font-mono text-red-300">
 					⚠ {p.errorText}
 				</pre>
+			)}
+		</div>
+	);
+}
+
+/** True for media-generation tool results (`generate_image`,
+ *  `generate_audio`) — both carry a base64 payload + mime type. Lets
+ *  ToolCallView render the media inline instead of dumping a 100k-character
+ *  base64 blob into the chat transcript. */
+function isMediaOutput(
+	output: unknown,
+): output is { b64: string; mimeType: string; model?: string } {
+	if (output === null || typeof output !== "object") return false;
+	const o = output as Record<string, unknown>;
+	return typeof o.b64 === "string" && typeof o.mimeType === "string";
+}
+
+function MediaOutputView({
+	output,
+}: {
+	output: { b64: string; mimeType: string; model?: string };
+}) {
+	const src = `data:${output.mimeType};base64,${output.b64}`;
+	return (
+		<div className="mt-1">
+			{output.mimeType.startsWith("image/") ? (
+				<img
+					src={src}
+					alt="Generated"
+					className="max-w-full rounded-sm border border-[var(--line)]"
+				/>
+			) : output.mimeType.startsWith("audio/") ? (
+				// biome-ignore lint/a11y/useMediaCaption: generated audio has no caption track
+				<audio
+					src={src}
+					controls
+					className="w-full"
+				/>
+			) : (
+				<pre className="m-0 overflow-x-auto whitespace-pre-wrap font-mono text-emerald-300">
+					→ [{output.mimeType}, {output.b64.length} bytes base64]
+				</pre>
+			)}
+			{output.model && (
+				<p className="mt-1 font-mono text-[var(--sea-ink-soft)]">
+					→ {output.model}
+				</p>
 			)}
 		</div>
 	);

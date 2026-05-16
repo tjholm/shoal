@@ -17,9 +17,7 @@ import { Route as ApiHealthzRouteImport } from './routes/api/healthz'
 import { Route as AcceptInvitationInvitationIdRouteImport } from './routes/accept-invitation.$invitationId'
 import { Route as AuthedWorkersRouteImport } from './routes/_authed/workers'
 import { Route as AuthedMembersRouteImport } from './routes/_authed/members'
-import { Route as AuthedImagesRouteImport } from './routes/_authed/images'
 import { Route as AuthedChatRouteImport } from './routes/_authed/chat'
-import { Route as AuthedAudioRouteImport } from './routes/_authed/audio'
 import { Route as AuthedApiKeysRouteImport } from './routes/_authed/api-keys'
 import { Route as ApiWorkersStreamRouteImport } from './routes/api/workers.stream'
 import { Route as ApiV1ModelsRouteImport } from './routes/api/v1/models'
@@ -71,19 +69,9 @@ const AuthedMembersRoute = AuthedMembersRouteImport.update({
   path: '/members',
   getParentRoute: () => AuthedRoute,
 } as any)
-const AuthedImagesRoute = AuthedImagesRouteImport.update({
-  id: '/images',
-  path: '/images',
-  getParentRoute: () => AuthedRoute,
-} as any)
 const AuthedChatRoute = AuthedChatRouteImport.update({
   id: '/chat',
   path: '/chat',
-  getParentRoute: () => AuthedRoute,
-} as any)
-const AuthedAudioRoute = AuthedAudioRouteImport.update({
-  id: '/audio',
-  path: '/audio',
   getParentRoute: () => AuthedRoute,
 } as any)
 const AuthedApiKeysRoute = AuthedApiKeysRouteImport.update({
@@ -142,9 +130,7 @@ export interface FileRoutesByFullPath {
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
   '/api-keys': typeof AuthedApiKeysRoute
-  '/audio': typeof AuthedAudioRoute
   '/chat': typeof AuthedChatRoute
-  '/images': typeof AuthedImagesRoute
   '/members': typeof AuthedMembersRoute
   '/workers': typeof AuthedWorkersRoute
   '/accept-invitation/$invitationId': typeof AcceptInvitationInvitationIdRoute
@@ -163,9 +149,7 @@ export interface FileRoutesByTo {
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
   '/api-keys': typeof AuthedApiKeysRoute
-  '/audio': typeof AuthedAudioRoute
   '/chat': typeof AuthedChatRoute
-  '/images': typeof AuthedImagesRoute
   '/members': typeof AuthedMembersRoute
   '/workers': typeof AuthedWorkersRoute
   '/accept-invitation/$invitationId': typeof AcceptInvitationInvitationIdRoute
@@ -187,9 +171,7 @@ export interface FileRoutesById {
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
   '/_authed/api-keys': typeof AuthedApiKeysRoute
-  '/_authed/audio': typeof AuthedAudioRoute
   '/_authed/chat': typeof AuthedChatRoute
-  '/_authed/images': typeof AuthedImagesRoute
   '/_authed/members': typeof AuthedMembersRoute
   '/_authed/workers': typeof AuthedWorkersRoute
   '/accept-invitation/$invitationId': typeof AcceptInvitationInvitationIdRoute
@@ -212,9 +194,7 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/sign-up'
     | '/api-keys'
-    | '/audio'
     | '/chat'
-    | '/images'
     | '/members'
     | '/workers'
     | '/accept-invitation/$invitationId'
@@ -233,9 +213,7 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/sign-up'
     | '/api-keys'
-    | '/audio'
     | '/chat'
-    | '/images'
     | '/members'
     | '/workers'
     | '/accept-invitation/$invitationId'
@@ -256,9 +234,7 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/sign-up'
     | '/_authed/api-keys'
-    | '/_authed/audio'
     | '/_authed/chat'
-    | '/_authed/images'
     | '/_authed/members'
     | '/_authed/workers'
     | '/accept-invitation/$invitationId'
@@ -349,25 +325,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedMembersRouteImport
       parentRoute: typeof AuthedRoute
     }
-    '/_authed/images': {
-      id: '/_authed/images'
-      path: '/images'
-      fullPath: '/images'
-      preLoaderRoute: typeof AuthedImagesRouteImport
-      parentRoute: typeof AuthedRoute
-    }
     '/_authed/chat': {
       id: '/_authed/chat'
       path: '/chat'
       fullPath: '/chat'
       preLoaderRoute: typeof AuthedChatRouteImport
-      parentRoute: typeof AuthedRoute
-    }
-    '/_authed/audio': {
-      id: '/_authed/audio'
-      path: '/audio'
-      fullPath: '/audio'
-      preLoaderRoute: typeof AuthedAudioRouteImport
       parentRoute: typeof AuthedRoute
     }
     '/_authed/api-keys': {
@@ -445,9 +407,7 @@ declare module '@tanstack/react-router' {
 
 interface AuthedRouteChildren {
   AuthedApiKeysRoute: typeof AuthedApiKeysRoute
-  AuthedAudioRoute: typeof AuthedAudioRoute
   AuthedChatRoute: typeof AuthedChatRoute
-  AuthedImagesRoute: typeof AuthedImagesRoute
   AuthedMembersRoute: typeof AuthedMembersRoute
   AuthedWorkersRoute: typeof AuthedWorkersRoute
   AuthedIndexRoute: typeof AuthedIndexRoute
@@ -456,9 +416,7 @@ interface AuthedRouteChildren {
 
 const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedApiKeysRoute: AuthedApiKeysRoute,
-  AuthedAudioRoute: AuthedAudioRoute,
   AuthedChatRoute: AuthedChatRoute,
-  AuthedImagesRoute: AuthedImagesRoute,
   AuthedMembersRoute: AuthedMembersRoute,
   AuthedWorkersRoute: AuthedWorkersRoute,
   AuthedIndexRoute: AuthedIndexRoute,
