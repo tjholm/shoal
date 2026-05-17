@@ -25,7 +25,7 @@ function mergeLive(prev: WorkerInfo, now: number): WorkerInfo {
 	return {
 		...prev,
 		online: !!live,
-		loadedModel: live?.loadedModel ?? null,
+		loadedModels: live?.loadedModels ?? [],
 		availableModels: live?.availableModels ?? [],
 		inFlight: live?.inFlight ?? 0,
 		maxConcurrent: live?.maxConcurrent ?? prev.maxConcurrent,

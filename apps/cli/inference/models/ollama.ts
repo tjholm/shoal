@@ -1,7 +1,7 @@
 import type {
-  ModelCapability,
-  ModelPurpose,
-  WorkerModel,
+	ModelCapability,
+	ModelPurpose,
+	WorkerModel,
 } from "@shoal/protocol";
 
 /**
@@ -25,88 +25,111 @@ const OLLAMA_PROBE_CONCURRENCY = 4;
 const ollamaProbeStatus = new Map<string, "available" | "unavailable">();
 
 export async function probeOllamaCapabilities(
-  backendUrl: string,
-  ids: string[],
+	backendUrl: string,
+	ids: string[],
 ): Promise<WorkerModel[]> {
-  if (ids.length === 0) return [];
-  if (ollamaProbeStatus.get(backendUrl) === "unavailable") {
-    return ids.map((id) => ({ id }));
-  }
+	if (ids.length === 0) return [];
+	if (ollamaProbeStatus.get(backendUrl) === "unavailable") {
+		return ids.map((id) => ({ id }));
+	}
 
-  const out = new Array<WorkerModel>(ids.length);
-  let cursor = 0;
-  let anySuccess = false;
-  let anyAttempt = false;
+	const out = new Array<WorkerModel>(ids.length);
+	let cursor = 0;
+	let anySuccess = false;
+	let anyAttempt = false;
 
-  async function probeWorker(): Promise<void> {
-    while (true) {
-      const i = cursor++;
-      if (i >= ids.length) return;
-      anyAttempt = true;
-      const id = ids[i];
-      const caps = await fetchOllamaCapabilities(backendUrl, id);
-      if (caps) anySuccess = true;
-      out[i] = caps ?? { id };
-    }
-  }
+	async function probeWorker(): Promise<void> {
+		while (true) {
+			const i = cursor++;
+			if (i >= ids.length) return;
+			anyAttempt = true;
+			const id = ids[i];
+			const caps = await fetchOllamaCapabilities(backendUrl, id);
+			if (caps) anySuccess = true;
+			out[i] = caps ?? { id };
+		}
+	}
 
-  await Promise.all(
-    Array.from({ length: Math.min(OLLAMA_PROBE_CONCURRENCY, ids.length) }, () =>
-      probeWorker(),
-    ),
-  );
+	await Promise.all(
+		Array.from({ length: Math.min(OLLAMA_PROBE_CONCURRENCY, ids.length) }, () =>
+			probeWorker(),
+		),
+	);
 
-  if (anyAttempt && !anySuccess) {
-    // Backend doesn't speak Ollama's /api/show — record so we don't keep
-    // probing on every refresh. Log explicitly rather than silently degrading.
-    ollamaProbeStatus.set(backendUrl, "unavailable");
-    console.warn(
-      `[worker] backend ${backendUrl} did not respond to /api/show; ` +
-        `model capabilities will be reported as unknown and the server will ` +
-        `route to it permissively.`,
-    );
-  } else if (anySuccess) {
-    ollamaProbeStatus.set(backendUrl, "available");
-  }
+	if (anyAttempt && !anySuccess) {
+		// Backend doesn't speak Ollama's /api/show — record so we don't keep
+		// probing on every refresh. Log explicitly rather than silently degrading.
+		ollamaProbeStatus.set(backendUrl, "unavailable");
+		console.warn(
+			`[worker] backend ${backendUrl} did not respond to /api/show; ` +
+				`model capabilities will be reported as unknown and the server will ` +
+				`route to it permissively.`,
+		);
+	} else if (anySuccess) {
+		ollamaProbeStatus.set(backendUrl, "available");
+	}
 
-  return out;
+	return out;
 }
 
 interface OllamaShowResponse {
-  capabilities?: string[];
+	capabilities?: string[];
+}
+
+interface OllamaPsResponse {
+	models?: Array<{ model?: string; name?: string }>;
+}
+
+/** Currently-resident models, per Ollama's `GET /api/ps`. Each entry carries
+ *  both `model` (the id used in /v1 requests) and `name`; we prefer `model`
+ *  for the residency set so the strings match what shoal routes against. */
+export async function fetchOllamaLoadedModels(
+	backendUrl: string,
+): Promise<string[]> {
+	const res = await fetch(`${backendUrl}/api/ps`);
+	if (!res.ok) {
+		throw new Error(`Ollama /api/ps returned ${res.status}`);
+	}
+	const body = (await res.json()) as OllamaPsResponse;
+	const ids: string[] = [];
+	for (const m of body.models ?? []) {
+		const id = m.model ?? m.name;
+		if (typeof id === "string") ids.push(id);
+	}
+	return ids;
 }
 
 async function fetchOllamaCapabilities(
-  backendUrl: string,
-  model: string,
+	backendUrl: string,
+	model: string,
 ): Promise<WorkerModel | null> {
-  try {
-    const res = await fetch(`${backendUrl}/api/show`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: model }),
-    });
-    if (!res.ok) return null;
-    const body = (await res.json()) as OllamaShowResponse;
-    const caps = body.capabilities ?? [];
+	try {
+		const res = await fetch(`${backendUrl}/api/show`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ name: model }),
+		});
+		if (!res.ok) return null;
+		const body = (await res.json()) as OllamaShowResponse;
+		const caps = body.capabilities ?? [];
 
-    // Ollama uses `completion` for chat-style generation and `embedding` for
-    // embedding models — these are mutually exclusive in practice. Image/TTS
-    // aren't served from Ollama, so we don't try to detect them here.
-    let purpose: ModelPurpose | undefined;
-    if (caps.includes("completion")) purpose = "chat";
-    else if (caps.includes("embedding")) purpose = "embedding";
+		// Ollama uses `completion` for chat-style generation and `embedding` for
+		// embedding models — these are mutually exclusive in practice. Image/TTS
+		// aren't served from Ollama, so we don't try to detect them here.
+		let purpose: ModelPurpose | undefined;
+		if (caps.includes("completion")) purpose = "chat";
+		else if (caps.includes("embedding")) purpose = "embedding";
 
-    const capabilities: ModelCapability[] = [];
-    if (caps.includes("tools")) capabilities.push("tools");
-    if (caps.includes("vision")) capabilities.push("vision");
-    if (caps.includes("thinking")) capabilities.push("thinking");
+		const capabilities: ModelCapability[] = [];
+		if (caps.includes("tools")) capabilities.push("tools");
+		if (caps.includes("vision")) capabilities.push("vision");
+		if (caps.includes("thinking")) capabilities.push("thinking");
 
-    const out: WorkerModel = { id: model };
-    if (purpose !== undefined) out.purpose = purpose;
-    if (capabilities.length > 0) out.capabilities = capabilities;
-    return out;
-  } catch {
-    return null;
-  }
+		const out: WorkerModel = { id: model };
+		if (purpose !== undefined) out.purpose = purpose;
+		if (capabilities.length > 0) out.capabilities = capabilities;
+		return out;
+	} catch {
+		return null;
+	}
 }

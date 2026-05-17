@@ -46,7 +46,7 @@ export async function snapshotOrgWorkers(orgId: string): Promise<WorkerInfo[]> {
 			workerId: row.workerId,
 			name: row.name,
 			online: !!live,
-			loadedModel: live?.loadedModel ?? null,
+			loadedModels: live?.loadedModels ?? [],
 			availableModels: live?.availableModels ?? [],
 			inFlight: live?.inFlight ?? 0,
 			maxConcurrent: live?.maxConcurrent ?? null,

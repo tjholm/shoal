@@ -52,6 +52,29 @@ export function normalizeLemonadeModels(
   return data.map((m) => normalizeOne(m as LemonadeEntry));
 }
 
+interface LemonadeHealthResponse {
+	all_models_loaded?: Array<{ model_name?: string }>;
+}
+
+/** Currently-resident models per Lemonade's `/api/v1/health`. Each entry in
+ *  `all_models_loaded` carries the canonical `model_name` (matches what
+ *  `/v1/models` advertises). Lemonade can have one model loaded per modality
+ *  simultaneously, so this can return multiple ids. */
+export async function fetchLemonadeLoadedModels(
+	backendUrl: string,
+): Promise<string[]> {
+	const res = await fetch(`${backendUrl}/api/v1/health`);
+	if (!res.ok) {
+		throw new Error(`Lemonade /api/v1/health returned ${res.status}`);
+	}
+	const body = (await res.json()) as LemonadeHealthResponse;
+	const ids: string[] = [];
+	for (const m of body.all_models_loaded ?? []) {
+		if (typeof m.model_name === "string") ids.push(m.model_name);
+	}
+	return ids;
+}
+
 function normalizeOne(m: LemonadeEntry): WorkerModel {
   const labels = m.labels ?? [];
 

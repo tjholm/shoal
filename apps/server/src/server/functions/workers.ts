@@ -13,8 +13,9 @@ export interface WorkerInfo {
 	workerId: string;
 	name: string | null;
 	online: boolean;
-	/** Live values when online, else null. */
-	loadedModel: string | null;
+	/** Live: models currently resident on the worker's backends, deduped across
+	 *  backends. Offline or no live state: empty array. */
+	loadedModels: string[];
 	availableModels: WorkerModel[];
 	inFlight: number;
 	maxConcurrent: number | null;
@@ -35,7 +36,7 @@ export interface WorkerDetail {
 	online: boolean;
 	inFlight: number;
 	maxConcurrent: number | null;
-	loadedModel: string | null;
+	loadedModels: string[];
 	availableModels: WorkerModel[];
 	firstSeenAt: number;
 	lastSeenAt: number;
@@ -135,7 +136,7 @@ export const getWorkerDetail = createServerFn({ method: "GET" })
 			online: !!live,
 			inFlight: live?.inFlight ?? 0,
 			maxConcurrent: live?.maxConcurrent ?? null,
-			loadedModel: live?.loadedModel ?? null,
+			loadedModels: live?.loadedModels ?? [],
 			availableModels: live?.availableModels ?? [],
 			firstSeenAt: row.firstSeenAt.getTime(),
 			lastSeenAt: row.lastSeenAt.getTime(),

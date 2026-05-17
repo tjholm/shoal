@@ -246,7 +246,7 @@ function WorkerCard({
 				</div>
 			</div>
 
-			<div className="grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
+			<div className="grid gap-x-8 gap-y-2 text-sm sm:grid-cols-3">
 				<Detail
 					label={`Jobs (${retentionLabel})`}
 					value={String(worker.totalJobs)}
@@ -263,7 +263,6 @@ function WorkerCard({
 							: `${formatDuration(Date.now() - worker.lastSeenAt)} ago`
 					}
 				/>
-				<Detail label="Loaded Model" value={worker.loadedModel ?? "—"} />
 			</div>
 
 			{worker.online && worker.availableModels.length > 0 && (
@@ -273,7 +272,12 @@ function WorkerCard({
 					</p>
 					<div className="flex flex-wrap gap-1.5">
 						{worker.availableModels.map((model) => (
-							<ModelChip key={model.id} model={model} size="sm" />
+							<ModelChip
+								key={model.id}
+								model={model}
+								size="sm"
+								loaded={worker.loadedModels.includes(model.id)}
+							/>
 						))}
 					</div>
 				</div>

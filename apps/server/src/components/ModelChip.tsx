@@ -44,13 +44,19 @@ const CAPABILITY_ICON: Record<
  * `size` controls the visual density:
  *   - "sm" matches the inline chips on a worker card
  *   - "md" matches the homepage Available Models grid
+ *
+ * `loaded` tints the chip green when the model is currently resident on the
+ * worker's backend (per the worker's residency probe). Defaults to false so
+ * callers without per-worker context render a neutral chip.
  */
 export function ModelChip({
 	model,
 	size = "sm",
+	loaded = false,
 }: {
 	model: WorkerModel;
 	size?: "sm" | "md";
+	loaded?: boolean;
 }) {
 	const purpose = model.purpose ? PURPOSE_ICON[model.purpose] : null;
 	const capabilities = model.capabilities ?? [];
@@ -60,13 +66,20 @@ export function ModelChip({
 			? { chip: "px-3 py-1 text-sm gap-1.5", icon: 13 }
 			: { chip: "px-2.5 py-0.5 text-xs gap-1", icon: 12 };
 
+	// Match the active job-count badge on the worker card so the "loaded" cue
+	// reads as the same status family as "this worker is online and ready".
+	const tone = loaded
+		? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+		: "border-[var(--chip-line)] bg-[var(--chip-bg)] text-[var(--sea-ink)]";
+
 	const titleParts: string[] = [model.id];
+	if (loaded) titleParts.push("Loaded");
 	if (purpose) titleParts.push(purpose.label);
 	for (const cap of capabilities) titleParts.push(CAPABILITY_ICON[cap].label);
 
 	return (
 		<span
-			className={`inline-flex items-center rounded-full border border-[var(--chip-line)] bg-[var(--chip-bg)] text-[var(--sea-ink)] ${sizing.chip}`}
+			className={`inline-flex items-center rounded-full border ${tone} ${sizing.chip}`}
 			title={titleParts.join(" · ")}
 		>
 			{purpose && (
