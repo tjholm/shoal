@@ -50,6 +50,69 @@ interface GenerateMediaOutput {
 	b64: string;
 }
 
+/**
+ * Read an OpenAI-compatible SSE stream from /v1/images/generations and return
+ * the first completed image's base64 payload. We request `n: 1` and don't ask
+ * for `partial_image` events, so a single `image_generation.completed` event
+ * is the expected shape; any later events would be duplicates and are ignored
+ * once we've returned.
+ */
+async function readImageStream(res: Response): Promise<string> {
+	if (!res.body) {
+		throw new Error("image stream response had no body");
+	}
+	const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+	let buffer = "";
+
+	while (true) {
+		const { value, done } = await reader.read();
+		if (value) buffer += value;
+
+		// Drain every complete \n\n-delimited event currently in the buffer.
+		while (true) {
+			const split = buffer.indexOf("\n\n");
+			if (split === -1) break;
+			const eventText = buffer.slice(0, split);
+			buffer = buffer.slice(split + 2);
+
+			// SSE comment lines start with `:` (we send `:hb` heartbeats and an
+			// `:ok` flush comment). Skip anything that isn't a `data:` line.
+			const dataLine = eventText
+				.split("\n")
+				.find((l) => l.startsWith("data: "));
+			if (!dataLine) continue;
+
+			const payload = dataLine.slice("data: ".length);
+			if (payload === "[DONE]") {
+				throw new Error("image stream ended without a completed event");
+			}
+
+			const event = JSON.parse(payload) as {
+				type?: string;
+				b64_json?: string;
+				error?: { message?: string };
+			};
+			if (event.type === "image_generation.completed") {
+				if (!event.b64_json) {
+					throw new Error(
+						"image generation succeeded but backend returned no b64 payload",
+					);
+				}
+				return event.b64_json;
+			}
+			if (event.type === "error") {
+				throw new Error(event.error?.message ?? "image generation failed");
+			}
+			// Unknown event types (e.g. future `image_generation.partial_image`
+			// once a backend supports it) — keep reading until we see completed.
+		}
+
+		if (done) {
+			throw new Error("image stream closed before sending a completed event");
+		}
+	}
+}
+
 /** Build a `generate_image` tool that lets the chat model invoke whichever
  *  image-purpose backend is online. The list of usable image models is
  *  encoded as an enum on `model` so the LLM picks per-call. Returns null
@@ -81,6 +144,12 @@ function makeGenerateImageTool(imageModels: string[]) {
 				.describe("Output dimensions. Use 1024x1024 for higher quality."),
 		}),
 		execute: async ({ model, prompt, size }): Promise<GenerateMediaOutput> => {
+			// Streaming, not because we want progressive renders (the upstream
+			// backends shoal proxies don't expose partials), but to get response
+			// headers out of the server immediately — that prevents Cloudflare
+			// and any other reverse proxy in the path from 524-ing the request
+			// on slow models. See packages/server-core/openai.ts
+			// streamImageJobAsSSE for the server side.
 			const res = await internalFetch(
 				`${window.location.origin}/api/v1/images/generations`,
 				{
@@ -92,6 +161,7 @@ function makeGenerateImageTool(imageModels: string[]) {
 						size,
 						n: 1,
 						response_format: "b64_json",
+						stream: true,
 					}),
 				},
 			);
@@ -99,18 +169,8 @@ function makeGenerateImageTool(imageModels: string[]) {
 				const detail = await res.text();
 				throw new Error(`image generation failed (${res.status}): ${detail}`);
 			}
-			const body = (await res.json()) as {
-				data?: Array<{ b64_json?: string; url?: string }>;
-			};
-			const first = body.data?.[0];
-			if (!first?.b64_json) {
-				// We asked for b64_json; if the backend returned only `url`, surface
-				// that explicitly rather than guessing a fetch-and-encode path.
-				throw new Error(
-					"image generation succeeded but backend returned no b64 payload",
-				);
-			}
-			return { model, mimeType: "image/png", b64: first.b64_json };
+			const b64 = await readImageStream(res);
+			return { model, mimeType: "image/png", b64 };
 		},
 	});
 }

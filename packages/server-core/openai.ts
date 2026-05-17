@@ -279,6 +279,7 @@ export async function handleImageGenerations(req: Request, key: VerifiedKey): Pr
     responseFormatRaw === "url" || responseFormatRaw === "b64_json"
       ? responseFormatRaw
       : undefined;
+  const streaming = body.stream === true;
 
   try {
     const result = dispatchJob({
@@ -292,6 +293,10 @@ export async function handleImageGenerations(req: Request, key: VerifiedKey): Pr
 
     if (!("promise" in result)) {
       return jsonError("Unexpected streaming result for images", 500);
+    }
+
+    if (streaming) {
+      return streamImageJobAsSSE(result.promise, { size, quality });
     }
 
     const jobResult: JobResult = await result.promise;
@@ -315,6 +320,109 @@ export async function handleImageGenerations(req: Request, key: VerifiedKey): Pr
     }
     return jsonError((err as Error).message ?? "Internal error", 500);
   }
+}
+
+/**
+ * Wrap a pending image-generation job as an OpenAI-compatible SSE stream.
+ *
+ * The stream flushes response headers immediately (so Cloudflare and any
+ * other reverse proxy with a request-to-headers idle timeout don't 524 on us
+ * during a long generation — Lemonade alone warns "~4-5 min per image" on
+ * CPU), keeps the connection warm with `:hb` SSE comments every 5s while the
+ * worker is busy, then emits one `image_generation.completed` event per
+ * returned image followed by the OpenAI `[DONE]` sentinel.
+ *
+ * We do not emit `image_generation.partial_image` events: the worker protocol
+ * delivers a single completed image and the upstream backends shoal supports
+ * today don't expose progressive renders on /v1/images/generations. OpenAI's
+ * spec permits zero partials when the client requested some — matches their
+ * own behavior on models that don't support intermediates — so this is still
+ * a compliant stream.
+ */
+function streamImageJobAsSSE(
+  promise: Promise<JobResult>,
+  meta: { size?: string; quality?: string },
+): Response {
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const writeData = (data: unknown) => {
+        try {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+        } catch {
+          // controller already closed (client disconnected) — nothing to do
+        }
+      };
+      const writeComment = (text: string) => {
+        try {
+          controller.enqueue(encoder.encode(`: ${text}\n\n`));
+        } catch {
+          // see writeData
+        }
+      };
+
+      // Flush headers and start the body immediately. Without this the
+      // response sits buffered until the first real event, defeating the
+      // whole point of streaming for proxy-timeout purposes.
+      writeComment("ok");
+      // Heartbeat cadence must stay under any reverse-proxy idle timeout in
+      // the path. Cloudflare's free-tier proxy times the origin out at 100s
+      // of silence; 5s gives a comfortable margin and matches the SSE
+      // keepalive cadence used elsewhere in shoal.
+      const heartbeat = setInterval(() => writeComment("hb"), 5_000);
+
+      try {
+        const jobResult = await promise;
+        if (!jobResult.images || jobResult.images.length === 0) {
+          writeData({
+            type: "error",
+            error: { message: "Worker did not return any images" },
+          });
+        } else {
+          const createdAt = Math.floor(Date.now() / 1000);
+          for (const img of jobResult.images) {
+            const event: Record<string, unknown> = {
+              type: "image_generation.completed",
+              created_at: createdAt,
+            };
+            if (img.b64 !== undefined) event.b64_json = img.b64;
+            if (img.url !== undefined) event.url = img.url;
+            if (img.revisedPrompt !== undefined) {
+              event.revised_prompt = img.revisedPrompt;
+            }
+            if (meta.size !== undefined) event.size = meta.size;
+            if (meta.quality !== undefined) event.quality = meta.quality;
+            writeData(event);
+          }
+        }
+      } catch (err) {
+        const message =
+          err instanceof ServiceUnavailableError
+            ? err.message
+            : ((err as Error).message ?? "Internal error");
+        writeData({ type: "error", error: { message } });
+      } finally {
+        clearInterval(heartbeat);
+        // OpenAI's SSE convention: a final `[DONE]` sentinel after the last
+        // event. Their own SDKs treat the stream as terminated either by
+        // this or by socket close; sending both is the safe default.
+        try {
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+        } catch {
+          // already closed
+        }
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    },
+  });
 }
 
 /** POST /v1/audio/speech */
