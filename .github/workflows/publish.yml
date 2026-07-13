@@ -66,8 +66,6 @@ jobs:
 
       - name: Publish to npm
         run: cd dist/npm && npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - uses: softprops/action-gh-release@v2
         with:
