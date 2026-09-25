@@ -14,13 +14,19 @@ import {
 	updateWorkerStats,
 	WorkerAlreadyConnectedError,
 	WorkerAuthError,
+	type WorkerState,
 } from "@shoal/server-core/workers";
 import type { Hooks } from "crossws";
 
 const PING_INTERVAL_MS = 10_000;
 const MAX_MISSED_PINGS = 3;
 
-const peerWorkerIds = new WeakMap<object, string>();
+// Keep the exact live socket so a late close/message from an evicted peer
+// cannot act on a new session that resumed the same worker ID.
+const peerWorkers = new WeakMap<object, {
+	workerId: string;
+	ws: WorkerState["ws"];
+}>();
 
 let heartbeatStarted = false;
 function ensureHeartbeat() {
@@ -114,7 +120,7 @@ export const workerHooks: Partial<Hooks> = {
 						maxConcurrent: msg.maxConcurrent,
 						name: msg.name,
 					});
-					peerWorkerIds.set(peer, result.workerId);
+					peerWorkers.set(peer, { workerId: result.workerId, ws: result.state.ws });
 					peer.send(
 						JSON.stringify({
 							type: "registered",
@@ -135,7 +141,7 @@ export const workerHooks: Partial<Hooks> = {
 						maxConcurrent: msg.maxConcurrent,
 						name: msg.name,
 					});
-					peerWorkerIds.set(peer, result.workerId);
+					peerWorkers.set(peer, { workerId: result.workerId, ws: result.state.ws });
 					peer.send(
 						JSON.stringify({ type: "registered", workerId: result.workerId }),
 					);
@@ -158,11 +164,12 @@ export const workerHooks: Partial<Hooks> = {
 			return;
 		}
 
-		const workerId = peerWorkerIds.get(peer);
-		if (!workerId) {
-			// Peer hasn't registered yet — drop any other message type.
+		const session = peerWorkers.get(peer);
+		if (!session || getWorker(session.workerId)?.ws !== session.ws) {
+			// Unregistered or evicted peer: don't let stale messages affect a resumed worker.
 			return;
 		}
+		const { workerId } = session;
 
 		if (msg.type === "pong") {
 			const w = getWorker(workerId);
@@ -187,11 +194,11 @@ export const workerHooks: Partial<Hooks> = {
 	},
 
 	close(peer) {
-		const workerId = peerWorkerIds.get(peer);
-		if (workerId) {
-			console.log(`[server] worker disconnected: ${workerId}`);
-			rejectWorkerJobs(workerId);
-			removeWorker(workerId);
-		}
+		const session = peerWorkers.get(peer);
+		if (!session || getWorker(session.workerId)?.ws !== session.ws) return;
+
+		console.log(`[server] worker disconnected: ${session.workerId}`);
+		rejectWorkerJobs(session.workerId);
+		removeWorker(session.workerId);
 	},
 };
