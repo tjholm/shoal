@@ -1,619 +1,472 @@
-import { type CSSProperties, useEffect, useRef, useState } from "react"
-import * as THREE from "three"
+import { useEffect, useRef } from "react"
 
-// Geometry-Wars-inspired neon palette: saturated, additively-blended colours
-// that pop against the near-black hero background. Additive blending alone
-// gives the lines their glow — no bloom pass needed.
-const NEON_COLORS = [
-	0x4ff8ff, // cyan
-	0xff4fff, // magenta
-	0xffd84a, // amber-yellow
-	0x49ff9a, // emerald
-	0xff7a32, // orange
-	0xff5fa8, // hot pink
-	0x9b6cff, // violet
-	0x9bff42, // lime
-]
+const FISH_COUNT = 28
 
-interface FleetNode {
-	name: string
-	serving: ReadonlyArray<string>
-}
-
-const FLEET: ReadonlyArray<FleetNode> = [
-	{ name: "Tim's Homelab Cluster", serving: ["smollm3-3b", "phi-4-mini-3.8b", "granite-3.3-8b"] },
-	{ name: "Tim's Framework 13 Pro", serving: ["smollm3-3b", "phi-4-mini-3.8b", "granite-3.3-8b"] },
-	{ name: "Jye's Mac Studio", serving: ["llama-4-scout-109b-a17b", "qwen3-235b-a22b"] },
-	{ name: "Jye's MacBook Pro", serving: ["llama-3.3-70b"] },
-	{ name: "Dave's Dell XPS 14", serving: ["qwen3-32b", "qwen3-vl-32b"] },
-	{ name: "Ryan's Macbook Pro", serving: ["mistral-large-2411-123b", "llama-3.3-70b"] },
-	{ name: "Tim's Framework Desktop", serving: ["deepseek-v3-671b-a37b", "llama-3.3-70b"] },
-]
-
-// Fish are uniform geometry; variation comes from colour, scale, and motion.
-// Body length is 1 unit (nose at +X, tail base at -X). The mesh is built with
-// local +X = forward so velocity-based heading alignment is direct.
-const FISH_LENGTH_FORWARD = 0.55
-const FISH_LENGTH_TAIL = -0.5
-const FISH_BASE_SCALE_MIN = 0.55
-const FISH_BASE_SCALE_MAX = 0.95
-const FISH_SPEED_MIN = 0.04
-const FISH_SPEED_MAX = 0.085
-const FISH_TAIL_FREQ = 9
-const FISH_TAIL_AMP = 0.5
-const FISH_HIT_RADIUS_MUL = 1.7
-const FISH_TURN_RATE = 6 // slerp factor per second
+type Vec3 = [number, number, number]
 
 interface Fish {
-	group: THREE.Group // position + heading (quaternion)
-	pivot: THREE.Group // body wiggle yaw
-	body: THREE.LineSegments
-	tail: THREE.LineLoop
-	bodyMat: THREE.LineBasicMaterial
-	tailMat: THREE.LineBasicMaterial
-	velocity: THREE.Vector3
-	baseScale: number
+	p: Vec3
+	v: Vec3
+	/** Body scale, so the school isn't all one size. */
+	size: number
+	/** The speed this fish settles at, and a decaying burst above it. */
+	cruise: number
+	burst: number
+	/** How far from the hub it likes to swim. */
+	depth: number
+	/** The axis it circles the hub around, tilted a little off vertical. */
+	axis: Vec3
+	swirl: number
 	phase: number
-	spinAxis: THREE.Vector3
-	color: THREE.Color
-	name: string
-	serving: ReadonlyArray<string>
+	wander: number
 }
 
-interface CaughtInfo {
-	name: string
-	serving: ReadonlyArray<string>
-	initialX: number
-	initialY: number
-}
+/** Camera distance, in units of the school's radius. */
+const CAMERA_DISTANCE = 3.2
+const CAMERA_TILT = 0.38
+const HUB_RADIUS = 0.085
+/** World units per unit of fish geometry. */
+const FISH_SCALE = 0.13
+/** How much bigger the canvas is than the box it sits in. */
+const BLEED = 1.5
+/** The school's height over its width; the box matches it. */
+const SCHOOL_HEIGHT = 1.25
+const MIN_SPEED = 0.0014
+const MAX_SPEED = 0.0065
+/** Simulation seconds per step, for the tail and body wiggle. */
+const STEP_SECONDS = 1 / 60
+const TAIL_FREQ = 6
+const TAIL_AMP = 0.5
 
-interface ShoalCanvasProps {
-	className?: string
-}
-
-const CANVAS_BASE_STYLE: CSSProperties = {
-	position: "absolute",
-	inset: 0,
-	width: "100%",
-	height: "100%",
-	display: "block",
-}
-
-export function ShoalCanvas({ className }: ShoalCanvasProps) {
+/** A school of wireframe fish circling a lit hub: the workers around shoal. */
+export function ShoalCanvas() {
 	const canvasRef = useRef<HTMLCanvasElement>(null)
-	const popoverRef = useRef<HTMLDivElement>(null)
-	const caughtIndexRef = useRef<number | null>(null)
-	const [caught, setCaught] = useState<CaughtInfo | null>(null)
 
 	useEffect(() => {
 		const canvas = canvasRef.current
-		if (!canvas) return
-		const container = canvas.parentElement
-		if (!container) return
+		const ctx = canvas?.getContext("2d")
+		if (!canvas || !ctx) return
 
-		const reduceMotion = window.matchMedia(
-			"(prefers-reduced-motion: reduce)",
-		).matches
+		const fish = spawnSchool()
+		let angle = 0.6
+		let time = 0
 
-		const scene = new THREE.Scene()
-		const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 200)
-		camera.position.set(0, 0, 26)
-
-		const renderer = new THREE.WebGLRenderer({
-			canvas,
-			alpha: true,
-			antialias: false,
-			powerPreference: "low-power",
-		})
-		// Render at 1× regardless of devicePixelRatio. With additive lines on a
-		// dark backdrop, the perceived crispness loss is minimal but fragment
-		// work drops 2-4× on retina/4K.
-		renderer.setPixelRatio(1)
-		renderer.setClearColor(0x000000, 0)
-
-		const bodyGeom = createFishBodyWireframe()
-		const tailGeom = createFishTailOutline()
-		const SHELL_RADIUS = 14
-
-		const fishCount = reduceMotion ? 10 : 20
-		const fishes: Fish[] = []
-
-		for (let i = 0; i < fishCount; i++) {
-			fishes.push(
-				makeFish({
-					bodyGeom,
-					tailGeom,
-					colorHex: NEON_COLORS[i % NEON_COLORS.length],
-					identity: FLEET[i % FLEET.length],
-					shellRadius: SHELL_RADIUS,
-				}),
-			)
+		const step = () => {
+			stepSchool(fish, time)
+			angle += 0.0005
+			time += STEP_SECONDS
 		}
 
-		for (const f of fishes) scene.add(f.group)
-
-		function resize() {
-			const cw = (container as HTMLElement).clientWidth
-			const ch = (container as HTMLElement).clientHeight
-			if (!cw || !ch) return
-			renderer.setSize(cw, ch, false)
-			camera.aspect = cw / ch
-			camera.updateProjectionMatrix()
-		}
-		resize()
-
-		const ro = new ResizeObserver(resize)
-		ro.observe(container)
-
-		const SEPARATION_RADIUS = 2.6
-		const SEPARATION = 0.022
-		const SHELL_PULL = 0.0035
-		const ORBITAL_BIAS = 0.0014
-
-		const sep = new THREE.Vector3()
-		const radial = new THREE.Vector3()
-		const orbital = new THREE.Vector3()
-		const projected = new THREE.Vector3()
-
-		// Heading alignment scratch
-		const forwardDir = new THREE.Vector3()
-		const upWorld = new THREE.Vector3(0, 1, 0)
-		const altUp = new THREE.Vector3(0, 0, 1)
-		const tmpRight = new THREE.Vector3()
-		const tmpUp = new THREE.Vector3()
-		const orientMat = new THREE.Matrix4()
-		const targetQuat = new THREE.Quaternion()
-
-		function alignToVelocity(
-			group: THREE.Group,
-			velocity: THREE.Vector3,
-			dt: number,
-		) {
-			if (velocity.lengthSq() < 1e-6) return
-			forwardDir.copy(velocity).normalize()
-			// Pick a stable up reference; if forward is nearly vertical, fall back
-			// to world Z so the cross product stays well-defined.
-			const refUp = Math.abs(forwardDir.y) > 0.95 ? altUp : upWorld
-			tmpRight.crossVectors(forwardDir, refUp).normalize()
-			tmpUp.crossVectors(tmpRight, forwardDir).normalize()
-			orientMat.makeBasis(forwardDir, tmpUp, tmpRight)
-			targetQuat.setFromRotationMatrix(orientMat)
-			group.quaternion.slerp(targetQuat, Math.min(1, dt * FISH_TURN_RATE))
-		}
-
-		const raycaster = new THREE.Raycaster()
-		const ndcPointer = new THREE.Vector2()
-
-		function findFishAt(clientX: number, clientY: number): number | null {
-			const rect = (container as HTMLElement).getBoundingClientRect()
-			if (
-				clientX < rect.left ||
-				clientX > rect.right ||
-				clientY < rect.top ||
-				clientY > rect.bottom
-			) {
-				return null
+		const draw = () => {
+			const dpr = window.devicePixelRatio || 1
+			const w = canvas.clientWidth
+			const h = canvas.clientHeight
+			if (!w || !h) return
+			if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+				canvas.width = Math.round(w * dpr)
+				canvas.height = Math.round(h * dpr)
 			}
-			ndcPointer.x = ((clientX - rect.left) / rect.width) * 2 - 1
-			ndcPointer.y = -(((clientY - rect.top) / rect.height) * 2 - 1)
-			raycaster.setFromCamera(ndcPointer, camera)
+			const style = getComputedStyle(canvas)
+			const lumen = style.getPropertyValue("--signal-lumen").trim()
+			const mist = style.getPropertyValue("--text-secondary").trim()
 
-			let bestIdx = -1
-			let bestDist = Infinity
-			for (let i = 0; i < fishes.length; i++) {
-				const f = fishes[i]
-				if (f.group.position.z < 0) continue
-				const d = raycaster.ray.distanceToPoint(f.group.position)
-				const hitR = f.baseScale * FISH_HIT_RADIUS_MUL
-				if (d < hitR) {
-					const camDist = camera.position.distanceTo(f.group.position)
-					if (camDist < bestDist) {
-						bestDist = camDist
-						bestIdx = i
-					}
+			ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+			ctx.clearRect(0, 0, w, h)
+
+			const ca = Math.cos(angle)
+			const sa = Math.sin(angle)
+			const ct = Math.cos(CAMERA_TILT)
+			const st = Math.sin(CAMERA_TILT)
+			const D = CAMERA_DISTANCE
+			// The canvas overhangs its box by BLEED, so the school is sized to the
+			// box and fish swimming wide fade out instead of hitting an edge.
+			const view = Math.min(w, h / SCHOOL_HEIGHT) / BLEED
+			const S = view * 0.5 * D
+			const project = (x: number, y: number, z: number) => {
+				const x1 = x * ca - z * sa
+				const z1 = x * sa + z * ca
+				const y2 = y * ct - z1 * st
+				const depth = y * st + z1 * ct + D
+				const k = S / depth
+				return { x: w / 2 + x1 * k, y: h / 2 - y2 * k, depth, k }
+			}
+			type Point = ReturnType<typeof project>
+
+			const items = fish.map((f, i) => {
+				const { p, v } = f
+				const vl = Math.hypot(v[0], v[1], v[2]) || 1
+				const fw: Vec3 = [v[0] / vl, v[1] / vl, v[2] / vl]
+				const sdl = Math.hypot(fw[2], fw[0]) || 1
+				const side: Vec3 = [-fw[2] / sdl, 0, fw[0] / sdl]
+				const up: Vec3 = [
+					side[1] * fw[2] - side[2] * fw[1],
+					side[2] * fw[0] - side[0] * fw[2],
+					side[0] * fw[1] - side[1] * fw[0],
+				]
+				const scale = FISH_SCALE * f.size
+				// A slow yaw of the whole body, and a fast wag of the tail about its hinge.
+				const yaw = Math.sin(time * 1.8 + f.phase) * 0.12
+				const cy = Math.cos(yaw)
+				const sy = Math.sin(yaw)
+				const wag = Math.sin(time * TAIL_FREQ + f.phase) * TAIL_AMP
+				const toWorld = (lx: number, ly: number, lz: number) => {
+					const x = (lx * cy + lz * sy) * scale
+					const y = ly * scale
+					const z = (-lx * sy + lz * cy) * scale
+					return project(
+						p[0] + fw[0] * x + up[0] * y + side[0] * z,
+						p[1] + fw[1] * x + up[1] * y + side[1] * z,
+						p[2] + fw[2] * x + up[2] * y + side[2] * z,
+					)
 				}
-			}
-			return bestIdx >= 0 ? bestIdx : null
-		}
-
-		function projectToScreen(pos: THREE.Vector3): { x: number; y: number } {
-			projected.copy(pos).project(camera)
-			const cw = (container as HTMLElement).clientWidth
-			const ch = (container as HTMLElement).clientHeight
-			return {
-				x: (projected.x + 1) * 0.5 * cw,
-				y: (1 - projected.y) * 0.5 * ch,
-			}
-		}
-
-		function onPointerMove(ev: PointerEvent) {
-			const idx = findFishAt(ev.clientX, ev.clientY)
-			;(container as HTMLElement).style.cursor =
-				idx !== null ? "pointer" : ""
-		}
-
-		function onPointerDown(ev: PointerEvent) {
-			const target = ev.target as HTMLElement | null
-			if (target?.closest("a, button, input, textarea, select")) return
-
-			const idx = findFishAt(ev.clientX, ev.clientY)
-			if (idx === null) {
-				if (caughtIndexRef.current !== null) {
-					caughtIndexRef.current = null
-					setCaught(null)
+				const body: Point[] = []
+				for (let j = 0; j < BODY_SEGMENTS.length; j += 3) {
+					body.push(toWorld(BODY_SEGMENTS[j], BODY_SEGMENTS[j + 1], BODY_SEGMENTS[j + 2]))
 				}
-				return
-			}
-			if (idx === caughtIndexRef.current) {
-				caughtIndexRef.current = null
-				setCaught(null)
-				return
-			}
-			caughtIndexRef.current = idx
-			const f = fishes[idx]
-			const screen = projectToScreen(f.group.position)
-			setCaught({
-				name: f.name,
-				serving: f.serving,
-				initialX: screen.x,
-				initialY: screen.y,
+				const tail = TAIL_OUTLINE.map(([tx, ty]) =>
+					toWorld(TAIL_BASE + tx * Math.cos(wag), ty, -tx * Math.sin(wag)),
+				)
+				return { i, center: project(p[0], p[1], p[2]), body, tail }
 			})
+			items.sort((a, b) => b.center.depth - a.center.depth)
+
+			const segments = (pts: ReadonlyArray<Point>) => {
+				ctx.beginPath()
+				for (let j = 0; j < pts.length; j += 2) {
+					ctx.moveTo(pts[j].x, pts[j].y)
+					ctx.lineTo(pts[j + 1].x, pts[j + 1].y)
+				}
+				ctx.stroke()
+			}
+			const loop = (pts: ReadonlyArray<Point>) => {
+				ctx.beginPath()
+				ctx.moveTo(pts[0].x, pts[0].y)
+				for (let j = 1; j < pts.length; j++) ctx.lineTo(pts[j].x, pts[j].y)
+				ctx.closePath()
+				ctx.stroke()
+			}
+
+			const baseScale = S / D
+
+			// The router: a solid core inside a slowly turning wireframe halo.
+			const hub = project(0, 0, 0)
+			const rx = time * 0.05
+			const ry = time * 0.15
+			const halo = HALO_VERTICES.map(([x, y, z]) => {
+				const x1 = x * Math.cos(ry) + z * Math.sin(ry)
+				const z1 = -x * Math.sin(ry) + z * Math.cos(ry)
+				const y1 = y * Math.cos(rx) - z1 * Math.sin(rx)
+				const z2 = y * Math.sin(rx) + z1 * Math.cos(rx)
+				return project(x1 * HUB_RADIUS, y1 * HUB_RADIUS, z2 * HUB_RADIUS)
+			})
+			let hubDrawn = false
+			const drawHub = () => {
+				ctx.strokeStyle = lumen
+				ctx.lineWidth = 0.8 * (hub.k / baseScale)
+				for (const [a, b] of HALO_EDGES) {
+					// Edges on the far side of the halo sit fainter than the near ones.
+					const behind = (halo[a].depth + halo[b].depth) / 2 > D
+					ctx.globalAlpha = behind ? 0.18 : 0.45
+					ctx.beginPath()
+					ctx.moveTo(halo[a].x, halo[a].y)
+					ctx.lineTo(halo[b].x, halo[b].y)
+					ctx.stroke()
+				}
+				ctx.globalAlpha = 1
+				ctx.fillStyle = lumen
+				ctx.beginPath()
+				ctx.arc(hub.x, hub.y, HUB_RADIUS * 0.55 * hub.k, 0, Math.PI * 2)
+				ctx.fill()
+				hubDrawn = true
+			}
+
+			ctx.lineJoin = "round"
+			// Back to front, with the hub drawn once the school passes its depth.
+			for (const it of items) {
+				if (!hubDrawn && it.center.depth < D) drawHub()
+				const near = Math.max(0, Math.min(1, (D + 0.9 - it.center.depth) / 1.8))
+				ctx.strokeStyle = mist
+				ctx.lineWidth = 0.8 * (it.center.k / baseScale)
+				ctx.globalAlpha = 0.14 + near * 0.6
+				segments(it.body)
+				loop(it.tail)
+			}
+			ctx.globalAlpha = 1
+			if (!hubDrawn) drawHub()
 		}
 
-		window.addEventListener("pointermove", onPointerMove)
-		window.addEventListener("pointerdown", onPointerDown)
-
+		const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches
 		let raf = 0
-		let prev = performance.now()
 		let visible = true
+		const frame = () => {
+			raf = requestAnimationFrame(frame)
+			if (!visible) return
+			step()
+			draw()
+		}
 
+		if (reduceMotion) {
+			for (let i = 0; i < 300; i++) step()
+			draw()
+		} else {
+			raf = requestAnimationFrame(frame)
+		}
+
+		const ro = new ResizeObserver(() => draw())
+		ro.observe(canvas)
 		const io = new IntersectionObserver(
 			(entries) => {
 				visible = entries[0]?.isIntersecting ?? true
-				if (visible) prev = performance.now()
 			},
 			{ threshold: 0.01 },
 		)
-		io.observe(container)
-
-		function step(now: number) {
-			raf = requestAnimationFrame(step)
-			if (!visible) {
-				prev = now
-				return
-			}
-			const dt = Math.min((now - prev) / 1000, 0.05)
-			prev = now
-			const t = now * 0.001
-			const caughtIdx = caughtIndexRef.current
-
-			for (let i = 0; i < fishes.length; i++) {
-				const f = fishes[i]
-
-				if (i === caughtIdx) {
-					f.tail.rotation.y =
-						Math.sin(t * FISH_TAIL_FREQ + f.phase) * FISH_TAIL_AMP
-					f.pivot.rotation.y = Math.sin(t * 1.4 + f.phase) * 0.25
-					continue
-				}
-
-				sep.set(0, 0, 0)
-				for (let j = 0; j < fishes.length; j++) {
-					if (i === j) continue
-					const other = fishes[j]
-					const dx = f.group.position.x - other.group.position.x
-					const dy = f.group.position.y - other.group.position.y
-					const dz = f.group.position.z - other.group.position.z
-					const d2 = dx * dx + dy * dy + dz * dz
-					if (
-						d2 < SEPARATION_RADIUS * SEPARATION_RADIUS &&
-						d2 > 0.0001
-					) {
-						const d = Math.sqrt(d2)
-						const w = 1 - d / SEPARATION_RADIUS
-						sep.x += (dx / d) * w
-						sep.y += (dy / d) * w
-						sep.z += (dz / d) * w
-					}
-				}
-				sep.multiplyScalar(SEPARATION)
-				f.velocity.add(sep)
-
-				radial.copy(f.group.position)
-				const r = radial.length()
-				if (r > 0.001) {
-					const diff = r - SHELL_RADIUS
-					radial.multiplyScalar((-diff * SHELL_PULL) / r)
-					f.velocity.add(radial)
-				}
-
-				orbital
-					.crossVectors(f.spinAxis, f.group.position)
-					.multiplyScalar(ORBITAL_BIAS)
-				f.velocity.add(orbital)
-
-				const speed = f.velocity.length()
-				if (speed > FISH_SPEED_MAX) f.velocity.setLength(FISH_SPEED_MAX)
-				else if (speed < FISH_SPEED_MIN) f.velocity.setLength(FISH_SPEED_MIN)
-
-				f.group.position.addScaledVector(f.velocity, dt * 60)
-
-				alignToVelocity(f.group, f.velocity, dt)
-				f.pivot.rotation.y = Math.sin(t * 2.6 + f.phase) * 0.12
-				f.tail.rotation.y =
-					Math.sin(t * FISH_TAIL_FREQ + f.phase) * FISH_TAIL_AMP
-			}
-
-			if (caughtIdx !== null && popoverRef.current) {
-				const fish = fishes[caughtIdx]
-				const screen = projectToScreen(fish.group.position)
-				popoverRef.current.style.transform = `translate(${screen.x}px, ${screen.y}px)`
-			}
-
-			renderer.render(scene, camera)
-		}
-
-		raf = requestAnimationFrame(step)
+		io.observe(canvas)
 
 		return () => {
 			cancelAnimationFrame(raf)
 			ro.disconnect()
 			io.disconnect()
-			window.removeEventListener("pointermove", onPointerMove)
-			window.removeEventListener("pointerdown", onPointerDown)
-			;(container as HTMLElement).style.cursor = ""
-			caughtIndexRef.current = null
-
-			for (const f of fishes) {
-				scene.remove(f.group)
-				f.bodyMat.dispose()
-				f.tailMat.dispose()
-			}
-			bodyGeom.dispose()
-			tailGeom.dispose()
-			renderer.dispose()
 		}
 	}, [])
 
 	return (
-		<>
+		<div aria-hidden="true" className="relative aspect-[4/5] w-full">
 			<canvas
 				ref={canvasRef}
-				aria-hidden="true"
-				tabIndex={-1}
-				className={className}
-				style={{ ...CANVAS_BASE_STYLE, zIndex: 0 }}
+				className="pointer-events-none absolute -inset-1/4 block size-[150%]"
+				style={{
+					maskImage: "radial-gradient(closest-side, black 62%, transparent 100%)",
+					WebkitMaskImage: "radial-gradient(closest-side, black 62%, transparent 100%)",
+				}}
 			/>
-			{caught ? (
-				<div
-					ref={popoverRef}
-					style={{
-						position: "absolute",
-						top: 0,
-						left: 0,
-						zIndex: 30,
-						pointerEvents: "none",
-						transform: `translate(${caught.initialX}px, ${caught.initialY}px)`,
-						willChange: "transform",
-					}}
-				>
-					<FishPopover name={caught.name} serving={caught.serving} />
-				</div>
-			) : null}
-			<div className="sr-only" aria-live="polite" aria-atomic="true">
-				{caught
-					? `Caught node ${caught.name} serving ${caught.serving.join(", ")}. Click again or click elsewhere to release.`
-					: ""}
-			</div>
-		</>
+		</div>
 	)
 }
 
-// ----------------------------------------------------------------------
-// Fish factory
-
-interface MakeFishOpts {
-	bodyGeom: THREE.BufferGeometry
-	tailGeom: THREE.BufferGeometry
-	colorHex: number
-	identity: FleetNode
-	shellRadius: number
-}
-
-function makeFish(opts: MakeFishOpts): Fish {
-	const color = new THREE.Color(opts.colorHex)
-
-	const bodyMat = neonLineMaterial(color)
-	const tailMat = neonLineMaterial(color)
-	const body = new THREE.LineSegments(opts.bodyGeom, bodyMat)
-	const tail = new THREE.LineLoop(opts.tailGeom, tailMat)
-
-	const baseScale =
-		FISH_BASE_SCALE_MIN +
-		Math.random() * (FISH_BASE_SCALE_MAX - FISH_BASE_SCALE_MIN)
-
-	// pivot carries a small yaw wiggle so it doesn't fight the heading
-	// quaternion on `group`.
-	const pivot = new THREE.Group()
-	pivot.scale.setScalar(baseScale)
-	pivot.add(body)
-	pivot.add(tail)
-	tail.position.x = FISH_LENGTH_TAIL
-
-	const group = new THREE.Group()
-	group.add(pivot)
-	group.position.copy(randomShellPosition(opts.shellRadius))
-
-	const spinAxis = randomSpinAxis()
-	const speed =
-		FISH_SPEED_MIN + Math.random() * (FISH_SPEED_MAX - FISH_SPEED_MIN)
-	const tangent = new THREE.Vector3().crossVectors(spinAxis, group.position)
-	if (tangent.lengthSq() < 0.0001) tangent.set(1, 0, 0)
-	tangent.normalize().multiplyScalar(speed)
-
-	return {
-		group,
-		pivot,
-		body,
-		tail,
-		bodyMat,
-		tailMat,
-		velocity: tangent,
-		baseScale,
-		phase: Math.random() * Math.PI * 2,
-		spinAxis,
-		color,
-		name: opts.identity.name,
-		serving: opts.identity.serving,
-	}
-}
-
-function neonLineMaterial(color: THREE.Color): THREE.LineBasicMaterial {
-	return new THREE.LineBasicMaterial({
-		color,
-		transparent: true,
-		opacity: 1,
-		blending: THREE.AdditiveBlending,
-		depthWrite: false,
+/** Fish in a squashed ball around the hub, swimming roughly around the y
+ *  axis, each with its own size, pace, depth and tilt. */
+function spawnSchool(): Fish[] {
+	return Array.from({ length: FISH_COUNT }, () => {
+		let x: number
+		let y: number
+		let z: number
+		let r2: number
+		do {
+			x = Math.random() * 2 - 1
+			y = Math.random() * 2 - 1
+			z = Math.random() * 2 - 1
+			r2 = x * x + y * y + z * z
+		} while (r2 > 1 || r2 < 0.2)
+		const s = 0.8
+		const tilt: Vec3 = [(Math.random() - 0.5) * 0.9, 1, (Math.random() - 0.5) * 0.9]
+		const tl = Math.hypot(tilt[0], tilt[1], tilt[2])
+		return {
+			p: [x * s, y * s * SCHOOL_HEIGHT, z * s],
+			v: [z * 0.01, (Math.random() - 0.5) * 0.004, -x * 0.01],
+			size: 0.7 + Math.random() * 0.6,
+			cruise: 0.002 + Math.random() * 0.0022,
+			burst: 0,
+			depth: 0.5 + Math.random() * 0.45,
+			axis: [tilt[0] / tl, tilt[1] / tl, tilt[2] / tl],
+			swirl: 0.5 + Math.random(),
+			phase: Math.random() * Math.PI * 2,
+			wander: 0.3 + Math.random() * 0.9,
+		}
 	})
 }
 
-// ----------------------------------------------------------------------
-// Fish geometry — single procedural low-poly mesh, lofted from elliptical
-// cross-sections along the body axis. We emit raw line segments (longitudinal
-// ribs + circumferential rings) directly so the wireframe stays clean — using
-// EdgesGeometry on a curved surface would either drop too much or include
-// quad-diagonal noise.
+/** One boids step: align, cohere and separate within the neighbourhood,
+ *  circle the hub on each fish's own axis, hold its own distance from the hub,
+ *  wander, and now and then dart. */
+function stepSchool(fish: Fish[], time: number) {
+	const acc = fish.map((f, i) => {
+		const { p, v } = f
+		const al: Vec3 = [0, 0, 0]
+		const co: Vec3 = [0, 0, 0]
+		const se: Vec3 = [0, 0, 0]
+		let count = 0
+		for (let j = 0; j < fish.length; j++) {
+			if (i === j) continue
+			const q = fish[j].p
+			const dx = q[0] - p[0]
+			const dy = q[1] - p[1]
+			const dz = q[2] - p[2]
+			const d2 = dx * dx + dy * dy + dz * dz
+			if (d2 >= 0.1225) continue
+			count++
+			for (let k = 0; k < 3; k++) {
+				al[k] += fish[j].v[k]
+				co[k] += q[k]
+			}
+			if (d2 < 0.0121) {
+				const w = 1 / Math.max(d2, 0.0004)
+				se[0] -= dx * w
+				se[1] -= dy * w
+				se[2] -= dz * w
+			}
+		}
+		const a: Vec3 = [0, 0, 0]
+		if (count) {
+			for (let k = 0; k < 3; k++) {
+				a[k] += (al[k] / count - v[k]) * 0.025
+				a[k] += (co[k] / count - p[k]) * 0.0004
+			}
+		}
+		const sl = Math.hypot(se[0], se[1], se[2]) || 1
+		if (sl > 1) {
+			const sm = Math.min(1, sl * 0.01)
+			for (let k = 0; k < 3; k++) a[k] += (se[k] / sl) * sm * 0.0015
+		}
+		const r = Math.hypot(p[0], p[1], p[2]) || 0.001
+		const ax = f.axis
+		const tangent: Vec3 = [
+			ax[1] * p[2] - ax[2] * p[1],
+			ax[2] * p[0] - ax[0] * p[2],
+			ax[0] * p[1] - ax[1] * p[0],
+		]
+		const tl = Math.hypot(tangent[0], tangent[1], tangent[2]) || 0.001
+		// Distance on a sphere stretched vertically, so the school stands tall.
+		const re = Math.hypot(p[0], p[1] / SCHOOL_HEIGHT, p[2]) || 0.001
+		const shell = (f.depth - re) * 0.0011
+		const outward: Vec3 = [p[0] / re, p[1] / SCHOOL_HEIGHT / re, p[2] / re]
+		for (let k = 0; k < 3; k++) {
+			a[k] += (tangent[k] / tl) * 0.00018 * f.swirl
+			a[k] += outward[k] * shell
+			a[k] += Math.sin(time * f.wander + f.phase + k * 2.1) * 0.00014
+		}
+		if (r < 0.3) for (let k = 0; k < 3; k++) a[k] += (p[k] / r) * 0.002
+		return a
+	})
+	fish.forEach((f, i) => {
+		for (let k = 0; k < 3; k++) f.v[k] += acc[i][k]
+		if (Math.random() < 0.0004) f.burst = 1
+		f.burst *= 0.97
+		const speed = Math.hypot(f.v[0], f.v[1], f.v[2]) || 0.001
+		const target = f.cruise * (1 + 0.3 * f.burst)
+		const eased = speed + (target - speed) * 0.05
+		const clamped = Math.min(MAX_SPEED, Math.max(MIN_SPEED, eased))
+		for (let k = 0; k < 3; k++) {
+			f.v[k] = (f.v[k] / speed) * clamped
+			f.p[k] += f.v[k]
+		}
+	})
+}
 
-function createFishBodyWireframe(): THREE.BufferGeometry {
-	// [x, yRadius, zRadius] — fish is taller than wide, peak girth past head.
+// The original wireframe fish: a body lofted from elliptical cross-sections,
+// drawn as longitudinal ribs and circumferential rings, nose at +x, y up,
+// z to the side.
+const NOSE = 0.55
+const TAIL_BASE = -0.5
+
+/** Line segments as flat [x, y, z] pairs. */
+const BODY_SEGMENTS: ReadonlyArray<number> = (() => {
+	// [x, height radius, width radius]: taller than wide, widest past the head.
 	const sections: ReadonlyArray<readonly [number, number, number]> = [
-		[FISH_LENGTH_FORWARD, 0.0, 0.0], // nose
+		[NOSE, 0, 0],
 		[0.32, 0.13, 0.08],
-		[0.05, 0.18, 0.13], // peak girth
+		[0.05, 0.18, 0.13],
 		[-0.2, 0.14, 0.09],
 		[-0.4, 0.06, 0.04],
-		[FISH_LENGTH_TAIL, 0.0, 0.0], // tail base
+		[TAIL_BASE, 0, 0],
 	]
 	const radial = 6
-	const positions: number[] = []
-
-	function ringPoint(s: number, r: number): readonly [number, number, number] {
+	const ring = (s: number, r: number) => {
 		const [x, yR, zR] = sections[s]
 		const a = (r / radial) * Math.PI * 2
 		return [x, Math.cos(a) * yR, Math.sin(a) * zR]
 	}
-
-	// Longitudinal ribs (head→tail along each radial slot)
+	const out: number[] = []
 	for (let s = 0; s < sections.length - 1; s++) {
-		for (let r = 0; r < radial; r++) {
-			const [x1, y1, z1] = ringPoint(s, r)
-			const [x2, y2, z2] = ringPoint(s + 1, r)
-			positions.push(x1, y1, z1, x2, y2, z2)
-		}
+		for (let r = 0; r < radial; r++) out.push(...ring(s, r), ...ring(s + 1, r))
 	}
-
-	// Circumferential rings (skip degenerate tip rings)
 	for (let s = 0; s < sections.length; s++) {
-		const [, yR, zR] = sections[s]
-		if (yR === 0 && zR === 0) continue
-		for (let r = 0; r < radial; r++) {
-			const [x1, y1, z1] = ringPoint(s, r)
-			const [x2, y2, z2] = ringPoint(s, (r + 1) % radial)
-			positions.push(x1, y1, z1, x2, y2, z2)
+		if (sections[s][1] === 0) continue
+		for (let r = 0; r < radial; r++) out.push(...ring(s, r), ...ring(s, (r + 1) % radial))
+	}
+	return out
+})()
+
+/** The tail fin, in the x/y plane, hinged at the tail base. */
+const TAIL_OUTLINE: ReadonlyArray<readonly [number, number]> = [
+	[0, 0.12],
+	[-0.32, 0.36],
+	[-0.18, 0],
+	[-0.32, -0.36],
+	[0, -0.12],
+]
+
+/** A once-subdivided icosahedron on the unit sphere, as vertices and edges. */
+const [HALO_VERTICES, HALO_EDGES] = ((): [Vec3[], Array<[number, number]>] => {
+	const t = (1 + Math.sqrt(5)) / 2
+	const vertices: Vec3[] = [
+		[-1, t, 0],
+		[1, t, 0],
+		[-1, -t, 0],
+		[1, -t, 0],
+		[0, -1, t],
+		[0, 1, t],
+		[0, -1, -t],
+		[0, 1, -t],
+		[t, 0, -1],
+		[t, 0, 1],
+		[-t, 0, -1],
+		[-t, 0, 1],
+	]
+	const faces = [
+		[0, 11, 5],
+		[0, 5, 1],
+		[0, 1, 7],
+		[0, 7, 10],
+		[0, 10, 11],
+		[1, 5, 9],
+		[5, 11, 4],
+		[11, 10, 2],
+		[10, 7, 6],
+		[7, 1, 8],
+		[3, 9, 4],
+		[3, 4, 2],
+		[3, 2, 6],
+		[3, 6, 8],
+		[3, 8, 9],
+		[4, 9, 5],
+		[2, 4, 11],
+		[6, 2, 10],
+		[8, 6, 7],
+		[9, 8, 1],
+	]
+	const midpoints = new Map<string, number>()
+	const midpoint = (a: number, b: number) => {
+		const key = a < b ? `${a}-${b}` : `${b}-${a}`
+		const known = midpoints.get(key)
+		if (known !== undefined) return known
+		const [ax, ay, az] = vertices[a]
+		const [bx, by, bz] = vertices[b]
+		vertices.push([(ax + bx) / 2, (ay + by) / 2, (az + bz) / 2])
+		midpoints.set(key, vertices.length - 1)
+		return vertices.length - 1
+	}
+	const edges = new Map<string, [number, number]>()
+	const edge = (a: number, b: number) => {
+		edges.set(a < b ? `${a}-${b}` : `${b}-${a}`, [a, b])
+	}
+	for (const [a, b, c] of faces) {
+		const ab = midpoint(a, b)
+		const bc = midpoint(b, c)
+		const ca = midpoint(c, a)
+		for (const [x, y, z] of [
+			[a, ab, ca],
+			[b, bc, ab],
+			[c, ca, bc],
+			[ab, bc, ca],
+		]) {
+			edge(x, y)
+			edge(y, z)
+			edge(z, x)
 		}
 	}
-
-	const geom = new THREE.BufferGeometry()
-	geom.setAttribute(
-		"position",
-		new THREE.Float32BufferAttribute(positions, 3),
-	)
-	return geom
-}
-
-function createFishTailOutline(): THREE.BufferGeometry {
-	// Vertical tail fin in the local XY plane; hinge at local origin so
-	// rotation.y sweeps the fin sideways through Z (the swim wag axis).
-	const pts: ReadonlyArray<readonly [number, number]> = [
-		[0, 0.12],
-		[-0.32, 0.36],
-		[-0.18, 0.0],
-		[-0.32, -0.36],
-		[0, -0.12],
-	]
-	const positions = new Float32Array(pts.length * 3)
-	for (let i = 0; i < pts.length; i++) {
-		positions[i * 3] = pts[i][0]
-		positions[i * 3 + 1] = pts[i][1]
-		positions[i * 3 + 2] = 0
-	}
-	const geom = new THREE.BufferGeometry()
-	geom.setAttribute("position", new THREE.BufferAttribute(positions, 3))
-	return geom
-}
-
-// ----------------------------------------------------------------------
-// Helpers
-
-function randomShellPosition(shellRadius: number): THREE.Vector3 {
-	const u = Math.random()
-	const v = Math.random()
-	const phi = Math.acos(2 * u - 1)
-	const theta = 2 * Math.PI * v
-	const r = shellRadius * (0.85 + Math.random() * 0.3)
-	return new THREE.Vector3(
-		r * Math.sin(phi) * Math.cos(theta),
-		r * Math.sin(phi) * Math.sin(theta) * 0.85,
-		r * Math.cos(phi),
-	)
-}
-
-function randomSpinAxis(): THREE.Vector3 {
-	return new THREE.Vector3(
-		Math.random() * 2 - 1,
-		Math.random() * 2 - 1,
-		Math.random() * 2 - 1,
-	).normalize()
-}
-
-// ----------------------------------------------------------------------
-// Popover
-
-function FishPopover({
-	name,
-	serving,
-}: {
-	name: string
-	serving: ReadonlyArray<string>
-}) {
-	return (
-		<div
-			className="island-shell rounded-sm px-4 py-3 select-none"
-			style={{ transform: "translate(-50%, calc(-100% - 14px))" }}
-		>
-			<div className="flex items-center gap-2">
-				<span className="block h-2 w-2 rounded-full bg-[var(--lagoon-deep)]" />
-				<span className="text-[11px] font-bold uppercase tracking-[0.16em] text-[var(--lagoon-deep)]">
-					Online
-				</span>
-			</div>
-			<div className="mt-1.5 text-sm font-semibold text-[var(--sea-ink)] whitespace-nowrap">
-				{name}
-			</div>
-			<div className="mt-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--sea-ink-soft)]">
-				Serving
-			</div>
-			<ul className="mt-1 space-y-0.5">
-				{serving.map((model) => (
-					<li
-						key={model}
-						className="text-xs text-[var(--sea-ink-soft)] whitespace-nowrap"
-					>
-						{model}
-					</li>
-				))}
-			</ul>
-		</div>
-	)
-}
+	const unit = vertices.map(([x, y, z]): Vec3 => {
+		const l = Math.hypot(x, y, z)
+		return [x / l, y / l, z / l]
+	})
+	return [unit, [...edges.values()]]
+})()

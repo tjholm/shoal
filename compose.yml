@@ -3,13 +3,13 @@
 # Local development:
 #   docker compose up
 # Brings up only peripheral services (Postgres now, Dragonfly/Redis later).
-# Run the shoal server on the host with `bun run dev:server`, pointing at
-# DATABASE_URL=postgres://shoal:shoal@localhost:5432/shoal.
+# `bun run dev` starts Postgres itself, then runs the API and dashboard on the
+# host against DATABASE_URL=postgres://shoal:shoal@localhost:5432/shoal.
 #
-# Prod-like full stack:
+# Self-hosted, or prod-like:
 #   docker compose --profile full up
-# Adds the shoal-server container, which connects to peripherals by service
-# name (postgres, dragonfly).
+# Adds the shoal container, which migrates the database on start and serves
+# the API and dashboard on http://localhost:3000.
 
 services:
   postgres:
@@ -33,7 +33,7 @@ services:
     profiles: [full]
     build:
       context: .
-      dockerfile: apps/server/server.dockerfile
+      dockerfile: apps/api/api.dockerfile
     image: shoal:dev
     depends_on:
       postgres:
@@ -44,6 +44,8 @@ services:
       DATABASE_URL: postgres://shoal:shoal@postgres:5432/shoal
       SHOAL_APP_URL: http://localhost:3000
       SHOAL_SERVER_URL: http://localhost:3000
+      # From .env. Not `:?`, which would fail `docker compose up postgres` too.
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
 
   # Reserved for the dispatcher's distributed state when that work lands.
   # Uncomment to enable; expose at localhost:6379 for host-side dev.

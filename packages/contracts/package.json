@@ -1,0 +1,12 @@
+{
+  "name": "@shoal/contracts",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "dependencies": {
+    "@shoal/protocol": "workspace:*",
+    "effect": "4.0.3"
+  }
+}

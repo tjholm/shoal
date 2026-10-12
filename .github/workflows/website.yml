@@ -1,0 +1,44 @@
+name: website
+
+# Builds apps/web to static files and uploads them to the `shoal` Cloudflare
+# Pages project, which serves shoal.school. Needs the repository secrets
+# CLOUDFLARE_API_TOKEN (Account › Cloudflare Pages › Edit) and
+# CLOUDFLARE_ACCOUNT_ID.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/web/**'
+      - 'bun.lock'
+      - '.github/workflows/website.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: website
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+
+      - name: Build
+        run: cd apps/web && bun run build
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          packageManager: bun
+          command: pages deploy apps/web/.output/public --project-name=shoal --branch=main
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}

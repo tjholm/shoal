@@ -16,7 +16,8 @@ jobs:
       - name: Typecheck
         run: |
           bunx tsc --noEmit
-          bunx tsc --noEmit -p apps/server
+          bunx tsc --noEmit -p apps/api
+          bunx tsc --noEmit -p apps/dashboard
           bunx tsc --noEmit -p apps/web
       - name: Test
         run: bun test --pass-with-no-tests
@@ -46,6 +47,7 @@ jobs:
           mkdir -p dist/npm
           bun build apps/cli/bin.ts \
             --target=node \
+            --define __SHOAL_VERSION__='"${{ steps.version.outputs.version }}"' \
             --outfile=dist/npm/shoal.js \
             --minify \
             --banner='#!/usr/bin/env node'
@@ -55,9 +57,9 @@ jobs:
         run: |
           cat > dist/npm/package.json <<EOF
           {
-            "name": "@shoal.sh/cli",
+            "name": "@shoal.school/cli",
             "version": "${{ steps.version.outputs.version }}",
-            "license": "MIT",
+            "license": "Apache-2.0",
             "type": "module",
             "bin": { "shoal": "shoal.js" },
             "engines": { "node": ">=22" }
@@ -66,6 +68,8 @@ jobs:
 
       - name: Publish to npm
         run: cd dist/npm && npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - uses: softprops/action-gh-release@v2
         with:
@@ -90,76 +94,38 @@ jobs:
       #     files: dist/bin/*
       #     generate_release_notes: true
 
-  # release-lite (disabled: re-enable once the GHCR namespace is stable, e.g. after repo transfer)
-  # release-lite:
-  #   needs: checks
-  #   runs-on: ubuntu-latest
-  #   permissions:
-  #     contents: read
-  #     packages: write
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #
-  #     - id: version
-  #       run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-  #
-  #     - id: image
-  #       run: echo "name=ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/shoal-lite" >> "$GITHUB_OUTPUT"
-  #
-  #     - uses: docker/setup-qemu-action@v3
-  #     - uses: docker/setup-buildx-action@v3
-  #
-  #     - uses: docker/login-action@v3
-  #       with:
-  #         registry: ghcr.io
-  #         username: ${{ github.actor }}
-  #         password: ${{ secrets.GITHUB_TOKEN }}
-  #
-  #     - uses: docker/build-push-action@v6
-  #       with:
-  #         context: .
-  #         file: apps/server/lite.dockerfile
-  #         platforms: linux/amd64,linux/arm64
-  #         push: true
-  #         tags: |
-  #           ${{ steps.image.outputs.name }}:${{ steps.version.outputs.version }}
-  #           ${{ steps.image.outputs.name }}:latest
-  #         cache-from: type=gha
-  #         cache-to: type=gha,mode=max
+  release-server:
+    needs: checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
 
-  # release-server (disabled: re-enable once the GHCR namespace is stable, e.g. after repo transfer)
-  # release-server:
-  #   needs: checks
-  #   runs-on: ubuntu-latest
-  #   permissions:
-  #     contents: read
-  #     packages: write
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #
-  #     - id: version
-  #       run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-  #
-  #     - id: image
-  #       run: echo "name=ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/shoal" >> "$GITHUB_OUTPUT"
-  #
-  #     - uses: docker/setup-qemu-action@v3
-  #     - uses: docker/setup-buildx-action@v3
-  #
-  #     - uses: docker/login-action@v3
-  #       with:
-  #         registry: ghcr.io
-  #         username: ${{ github.actor }}
-  #         password: ${{ secrets.GITHUB_TOKEN }}
-  #
-  #     - uses: docker/build-push-action@v6
-  #       with:
-  #         context: .
-  #         file: apps/server/server.dockerfile
-  #         platforms: linux/amd64,linux/arm64
-  #         push: true
-  #         tags: |
-  #           ${{ steps.image.outputs.name }}:${{ steps.version.outputs.version }}
-  #           ${{ steps.image.outputs.name }}:latest
-  #         cache-from: type=gha
-  #         cache-to: type=gha,mode=max
+      - id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - id: image
+        run: echo "name=ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/shoal" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/api.dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ steps.image.outputs.name }}:${{ steps.version.outputs.version }}
+            ${{ steps.image.outputs.name }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

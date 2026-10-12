@@ -16,25 +16,19 @@ import type { RawModelEntry } from "./types";
  * Reference: https://docs.vllm.ai/en/latest/serving/openai_compatible_server/
  */
 
-interface VLLMEntry extends RawModelEntry {
-  owned_by?: string;
-  permission?: unknown[];
-  max_model_len?: number;
-}
-
 export function isVLLMResponse(data: ReadonlyArray<RawModelEntry>): boolean {
-  return data.some((m) => {
-    const e = m as VLLMEntry;
-    if (e.owned_by === "vllm") return true;
-    // `permission` + `max_model_len` together are vLLM-specific: OpenAI's
-    // legacy permission shape is long gone from /v1/models on openai.com, and
-    // max_model_len is vLLM's invention.
-    return Array.isArray(e.permission) && typeof e.max_model_len === "number";
-  });
+	return data.some(
+		(m) =>
+			m.owned_by === "vllm" ||
+			// `permission` + `max_model_len` together are vLLM-specific: OpenAI's
+			// legacy permission shape is long gone from /v1/models on openai.com,
+			// and max_model_len is vLLM's invention.
+			(m.permission !== undefined && m.max_model_len !== undefined),
+	);
 }
 
 export function normalizeVLLMModels(
-  data: ReadonlyArray<RawModelEntry>,
+	data: ReadonlyArray<RawModelEntry>,
 ): WorkerModel[] {
-  return data.map((m) => ({ id: m.id }));
+	return data.map((m) => ({ id: m.id }));
 }

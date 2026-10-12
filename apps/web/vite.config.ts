@@ -13,7 +13,8 @@ const config = defineConfig({
     devtools(),
     nitro({ rollupConfig: { external: [/^@sentry\//] } }),
     tailwindcss(),
-    tanstackStart(),
+    // Prerendered to static files for Cloudflare Pages; nothing renders per request.
+    tanstackStart({ prerender: { enabled: true, crawlLinks: true } }),
     viteReact(),
   ],
 })

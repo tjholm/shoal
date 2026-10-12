@@ -1,0 +1,23 @@
+{
+  "name": "@shoal/api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch src/main.ts",
+    "start": "bun src/main.ts"
+  },
+  "dependencies": {
+    "@better-auth/api-key": "^1.7.7",
+    "@effect/platform-bun": "4.0.3",
+    "@shoal/contracts": "workspace:*",
+    "@shoal/db": "workspace:*",
+    "@shoal/protocol": "workspace:*",
+    "better-auth": "^1.7.7",
+    "drizzle-orm": "1.0.0-rc.5-5935859",
+    "effect": "4.0.3",
+    "pg": "^8.16.0"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.15.0"
+  }
+}

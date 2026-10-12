@@ -1,0 +1,38 @@
+# shoal and its database. https://shoal.school/install.sh puts this file beside
+# a .env holding the auth secret and SHOAL_URL, then runs `docker compose up -d`.
+# Set SHOAL_URL to the address your browser and workers reach this machine at,
+# such as http://192.168.1.10:3000, then run `docker compose up -d` again.
+
+name: shoal
+
+services:
+  shoal:
+    image: ghcr.io/tjholm/shoal:latest
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgres://shoal:shoal@postgres:5432/shoal
+      SHOAL_APP_URL: ${SHOAL_URL:?Set it in .env}
+      SHOAL_SERVER_URL: ${SHOAL_URL:?Set it in .env}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set it in .env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: shoal
+      POSTGRES_PASSWORD: shoal
+      POSTGRES_DB: shoal
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shoal -d shoal"]
+      interval: 5s
+      retries: 12
+    restart: unless-stopped
+
+volumes:
+  postgres-data:

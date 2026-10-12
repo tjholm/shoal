@@ -5,8 +5,7 @@
   "exports": {
     ".": "./index.ts",
     "./schema": "./schema.ts",
-    "./auth": "./auth.ts",
-    "./email": "./email.ts"
+    "./database": "./database.ts"
   },
   "scripts": {
     "generate": "drizzle-kit generate",
@@ -15,13 +14,12 @@
     "studio": "drizzle-kit studio"
   },
   "dependencies": {
-    "@better-auth/api-key": "^1.6.9",
-    "@electric-sql/pglite": "^0.2.17",
-    "better-auth": "^1.6.9",
-    "drizzle-orm": "^0.44",
-    "postgres": "^3.4.5"
+    "@effect/platform-node": "4.0.3",
+    "@effect/sql-pg": "4.0.3",
+    "drizzle-orm": "1.0.0-rc.5-5935859",
+    "effect": "4.0.3"
   },
   "devDependencies": {
-    "drizzle-kit": "^0.31"
+    "drizzle-kit": "1.0.0-rc.5-5935859"
   }
 }

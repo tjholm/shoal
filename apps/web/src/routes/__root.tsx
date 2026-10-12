@@ -9,9 +9,18 @@ export const Route = createRootRoute({
     meta: [
       { charSet: 'utf-8' },
       { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-      { title: 'Shoal' },
+      { title: 'shoal: one API for every machine you own' },
+      {
+        name: 'description',
+        content:
+          'Self-hosted, OpenAI- and Anthropic-compatible API in front of the GPUs and Macs you already own. Workers dial out; nothing needs a port opened.',
+      },
+      { name: 'theme-color', content: '#070B10' },
     ],
-    links: [{ rel: 'stylesheet', href: appCss }],
+    links: [
+      { rel: 'stylesheet', href: appCss },
+      { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
+    ],
   }),
   shellComponent: RootDocument,
 })

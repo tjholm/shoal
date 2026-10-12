@@ -1,27 +1,19 @@
-import { parseArgs } from "node:util";
-import { runMigrations } from "./index.ts";
+import { NodeRuntime } from "@effect/platform-node";
+import { Console, Effect } from "effect";
+import { Database } from "./database.ts";
 
-const { positionals } = parseArgs({
-  args: process.argv.slice(2),
-  allowPositionals: true,
-  strict: false,
-});
-
-const [command] = positionals;
-
-switch (command) {
-  case "migrate": {
-    await runMigrations();
-    console.log("Migrations applied.");
-    break;
-  }
-
-  default:
-    console.log(`Usage: bun run db <command>
+const usage = `Usage: bun run db <command>
 
 Commands:
   migrate    Run database migrations
 
-Note: API key, worker token, and user management is now handled through the
-web dashboard at /settings (after signing in).`);
-}
+API keys, worker tokens and users are managed in the dashboard.`;
+
+const program = Effect.gen(function* () {
+	const [command] = process.argv.slice(2);
+	if (command !== "migrate") return yield* Console.log(usage);
+	yield* (yield* Database).migrate;
+	yield* Console.log("Migrations applied.");
+});
+
+program.pipe(Effect.provide(Database.layer), NodeRuntime.runMain);

@@ -1,21 +1,17 @@
-export async function embeddingInference(
-  backendUrl: string,
-  model: string,
-  input: string | string[],
-  signal?: AbortSignal,
-): Promise<number[][]> {
-  const res = await fetch(`${backendUrl}/v1/embeddings`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model, input }),
-    signal,
-  });
+import { Effect, Schema } from "effect";
+import { postJson } from "./backend";
 
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Backend returned ${res.status}: ${body}`);
-  }
+const EmbeddingResponse = Schema.Struct({
+	data: Schema.Array(Schema.Struct({ embedding: Schema.Array(Schema.Number) })),
+});
 
-  const json = (await res.json()) as { data: Array<{ embedding: number[] }> };
-  return json.data.map((d) => d.embedding);
-}
+export const embeddingInference = (
+	backendUrl: string,
+	model: string,
+	input: string | ReadonlyArray<string>,
+) =>
+	postJson(
+		`${backendUrl}/v1/embeddings`,
+		{ model, input },
+		EmbeddingResponse,
+	).pipe(Effect.map((json) => json.data.map((d) => d.embedding)));

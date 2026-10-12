@@ -1,4 +1,6 @@
 import type { WorkerModel } from "@shoal/protocol";
+import { Effect, Schema } from "effect";
+import { getJson } from "../backend";
 import type { RawModelEntry } from "./types";
 
 /**
@@ -16,14 +18,10 @@ import type { RawModelEntry } from "./types";
  * Reference: https://github.com/mostlygeek/llama-swap
  */
 
-interface LlamaSwapEntry extends RawModelEntry {
-	owned_by?: string;
-}
-
 export function isLlamaSwapResponse(
 	data: ReadonlyArray<RawModelEntry>,
 ): boolean {
-	return data.some((m) => (m as LlamaSwapEntry).owned_by === "llama-swap");
+	return data.some((m) => m.owned_by === "llama-swap");
 }
 
 export function normalizeLlamaSwapModels(
@@ -35,25 +33,18 @@ export function normalizeLlamaSwapModels(
 	return data.map((m) => ({ id: m.id }));
 }
 
-interface LlamaSwapRunningEntry {
-	model: string;
-	state: string;
-}
-
-interface LlamaSwapRunningResponse {
-	running: LlamaSwapRunningEntry[];
-}
+const RunningResponse = Schema.Struct({
+	running: Schema.Array(
+		Schema.Struct({ model: Schema.String, state: Schema.String }),
+	),
+});
 
 /** Currently-resident models, per `GET /running`. Filters to `state: "ready"`
  *  because a process in `starting` is mid-load and not yet serving — routing
  *  to it would queue, which from pickWorker's perspective is still "cold". */
-export async function fetchLlamaSwapLoadedModels(
-	backendUrl: string,
-): Promise<string[]> {
-	const res = await fetch(`${backendUrl}/running`);
-	if (!res.ok) {
-		throw new Error(`llama-swap /running returned ${res.status}`);
-	}
-	const body = (await res.json()) as LlamaSwapRunningResponse;
-	return body.running.filter((p) => p.state === "ready").map((p) => p.model);
-}
+export const fetchLlamaSwapLoadedModels = (backendUrl: string) =>
+	getJson(`${backendUrl}/running`, RunningResponse).pipe(
+		Effect.map((body) =>
+			body.running.filter((p) => p.state === "ready").map((p) => p.model),
+		),
+	);

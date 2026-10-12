@@ -6,193 +6,186 @@
  * whatever is running at the resolved backend URL. The client accepts a list
  * of backends and routes each job to whichever one advertises the requested
  * model via `/v1/models`. When multiple backends advertise the same id, the
- * first-configured wins. Construct a client once via `createInferenceClient`
- * and inject it where inference is needed; this keeps all backend coupling
- * at the construction site, so tests can pass in a fake client without
- * touching module-level state.
+ * first-configured wins.
  */
 
-import type { WorkerModel } from "@shoal/protocol";
-import {
-	type ChatChunk,
-	type ChatOptions,
-	chatInference,
-	type ToolCallDelta,
-	type Usage,
-} from "./chat";
-import { embeddingInference } from "./embedding";
-import {
-	type GeneratedImage,
-	type ImageOptions,
-	imageInference,
-} from "./image";
-import { fetchAvailableModels, fetchLoadedModels } from "./models";
-import {
-	type GeneratedAudio,
-	type SpeechOptions,
-	speechInference,
-} from "./speech";
-
-export type {
-	ChatChunk,
-	ChatOptions,
-	GeneratedAudio,
+import type {
 	GeneratedImage,
 	ImageOptions,
+	InferOptions,
 	SpeechOptions,
-	ToolCallDelta,
-	Usage,
-};
+	WorkerModel,
+} from "@shoal/protocol";
+import { Array as Arr, Context, Effect, Layer, Ref, Stream } from "effect";
+import type { HttpClient } from "effect/http";
+import { type ChatChunk, chatInference } from "./chat";
+import { embeddingInference } from "./embedding";
+import { type BackendError, NoBackendForModel } from "./errors";
+import { imageInference } from "./image";
+import { ModelDiscovery } from "./models";
+import { type GeneratedAudio, speechInference } from "./speech";
 
-export interface InferenceClient {
-	/** Probe all configured backends in one pass. Returns the advertised model
-	 *  catalog (deduped, first-configured-wins) and the currently-loaded set
-	 *  (union across backends). Also refreshes the internal routing cache used
-	 *  by chat/embedding/image/speech. Call this on the worker's stats tick. */
-	refresh(): Promise<{ models: WorkerModel[]; loaded: string[] }>;
-	chat(
-		model: string,
-		messages: unknown[],
-		options?: ChatOptions,
-		signal?: AbortSignal,
-	): AsyncGenerator<ChatChunk>;
-	embedding(
-		model: string,
-		input: string | string[],
-		signal?: AbortSignal,
-	): Promise<number[][]>;
-	image(
-		model: string,
-		prompt: string,
-		options?: ImageOptions,
-		signal?: AbortSignal,
-	): Promise<GeneratedImage[]>;
-	speech(
-		model: string,
-		input: string,
-		options?: SpeechOptions,
-		signal?: AbortSignal,
-	): Promise<GeneratedAudio>;
-}
+export type { ChatChunk, GeneratedAudio };
 
-export function createInferenceClient(config: {
-	backendUrls: string[];
-}): InferenceClient {
-	if (config.backendUrls.length === 0) {
-		throw new Error("createInferenceClient requires at least one backend URL");
+type InferenceError = BackendError | NoBackendForModel;
+
+export class InferenceClient extends Context.Service<
+	InferenceClient,
+	{
+		/** Probe all configured backends in one pass. Returns the advertised
+		 *  model catalog (deduped, first-configured-wins) and the
+		 *  currently-loaded set (union across backends). Also refreshes the
+		 *  routing cache used by chat/embedding/image/speech. Per-backend
+		 *  failures are logged and that backend contributes nothing. */
+		readonly refresh: Effect.Effect<{
+			models: ReadonlyArray<WorkerModel>;
+			loaded: ReadonlyArray<string>;
+		}>;
+		chat(
+			model: string,
+			messages: ReadonlyArray<unknown>,
+			options: InferOptions | undefined,
+		): Stream.Stream<ChatChunk, InferenceError>;
+		embedding(
+			model: string,
+			input: string | ReadonlyArray<string>,
+		): Effect.Effect<ReadonlyArray<ReadonlyArray<number>>, InferenceError>;
+		image(
+			model: string,
+			prompt: string,
+			options: ImageOptions | undefined,
+		): Effect.Effect<ReadonlyArray<GeneratedImage>, InferenceError>;
+		speech(
+			model: string,
+			input: string,
+			options: SpeechOptions | undefined,
+		): Effect.Effect<GeneratedAudio, InferenceError>;
 	}
-	const backendUrls = config.backendUrls.map((u) => u.replace(/\/+$/, ""));
+>()("@shoal/cli/inference/InferenceClient") {
+	static readonly layer = (
+		configuredUrls: Arr.NonEmptyReadonlyArray<string>,
+	): Layer.Layer<InferenceClient, never, HttpClient.HttpClient> =>
+		Layer.effect(
+			InferenceClient,
+			Effect.gen(function* () {
+				const discovery = yield* ModelDiscovery;
+				const context = yield* Effect.context<HttpClient.HttpClient>();
+				const backendUrls = configuredUrls.map((u) => u.replace(/\/+$/, ""));
 
-	// Routing cache only. Keyed by URL, holds the last advertised model set per
-	// backend. Updated on every refresh(); read on every chat/embedding/etc.
-	// call by resolveBackend(). Not used for residency — residency is computed
-	// per-refresh from the live response, so there's no dialect or loaded-set
-	// state to keep in sync.
-	const modelsByBackend = new Map<string, Map<string, WorkerModel>>();
+				// Routing cache only: the last advertised model ids per backend.
+				// Residency is computed per-refresh from the live response, so
+				// there's no loaded-set state to keep in sync.
+				const modelsByBackend = yield* Ref.make(
+					new Map<string, ReadonlySet<string>>(),
+				);
 
-	async function refresh(): Promise<{
-		models: WorkerModel[];
-		loaded: string[];
-	}> {
-		// Probe each backend in parallel — they're independent and the result is
-		// rebuilt deterministically below regardless of completion order.
-		const results = await Promise.all(
-			backendUrls.map(async (url) => {
-				try {
-					const { models, dialect } = await fetchAvailableModels(url);
-					const advertised = models.map((m) => m.id);
-					let loaded: string[];
-					try {
-						loaded = await fetchLoadedModels(url, dialect, advertised);
-					} catch (err) {
-						console.error(
-							`[worker] failed to fetch loaded models from ${url} (${dialect}):`,
-							(err as Error).message,
-						);
-						loaded = [];
-					}
-					return { url, models, loaded };
-				} catch (err) {
-					console.error(
-						`[worker] failed to fetch models from ${url}:`,
-						(err as Error).message,
+				const probeBackend = (url: string) =>
+					discovery.available(url).pipe(
+						Effect.flatMap(({ models, dialect }) =>
+							discovery
+								.loaded(
+									url,
+									dialect,
+									models.map((m) => m.id),
+								)
+								.pipe(
+									Effect.tapError((err) =>
+										Effect.logError(
+											`failed to fetch loaded models from ${url} (${dialect}): ${err.message}`,
+										),
+									),
+									Effect.orElseSucceed((): ReadonlyArray<string> => []),
+									Effect.map((loaded) => ({ models, loaded })),
+								),
+						),
+						Effect.tapError((err) =>
+							Effect.logError(
+								`failed to fetch models from ${url}: ${err.message}`,
+							),
+						),
+						Effect.orElseSucceed(() => ({
+							models: [] as ReadonlyArray<WorkerModel>,
+							loaded: [] as ReadonlyArray<string>,
+						})),
 					);
-					return { url, models: [] as WorkerModel[], loaded: [] as string[] };
-				}
+
+				const refresh = Effect.gen(function* () {
+					// Results come back in configured order, so first-configured
+					// wins when deduping below.
+					const results = yield* Effect.forEach(backendUrls, probeBackend, {
+						concurrency: "unbounded",
+					});
+					yield* Ref.set(
+						modelsByBackend,
+						new Map(
+							backendUrls.map((url, i) => [
+								url,
+								new Set(results[i].models.map((m) => m.id)),
+							]),
+						),
+					);
+					return {
+						models: Arr.dedupeWith(
+							results.flatMap((r) => r.models),
+							(a, b) => a.id === b.id,
+						),
+						loaded: Arr.dedupe(results.flatMap((r) => r.loaded)),
+					};
+				}).pipe(Effect.withSpan("InferenceClient.refresh"));
+
+				const pickBackend = (model: string) =>
+					Ref.get(modelsByBackend).pipe(
+						Effect.map((byBackend) =>
+							backendUrls.find((url) => byBackend.get(url)?.has(model)),
+						),
+					);
+
+				const resolveBackend = Effect.fnUntraced(function* (model: string) {
+					const cached = yield* pickBackend(model);
+					if (cached) return cached;
+					// Cache miss = the periodic refresh hasn't fired yet, or the
+					// backend pulled a new model since the last tick. Refresh once
+					// before giving up.
+					yield* refresh;
+					const url = yield* pickBackend(model);
+					if (url) return url;
+					const byBackend = yield* Ref.get(modelsByBackend);
+					return yield* new NoBackendForModel({
+						model,
+						knownModels: Arr.dedupe(
+							[...byBackend.values()].flatMap((ids) => [...ids]),
+						),
+					});
+				});
+
+				return InferenceClient.of({
+					refresh,
+					chat: (model, messages, options) =>
+						resolveBackend(model).pipe(
+							Effect.map((url) => chatInference(url, model, messages, options)),
+							Stream.unwrap,
+							Stream.provideContext(context),
+						),
+					embedding: (model, input) =>
+						resolveBackend(model).pipe(
+							Effect.flatMap((url) => embeddingInference(url, model, input)),
+							Effect.provideContext(context),
+						),
+					image: (model, prompt, options) =>
+						resolveBackend(model).pipe(
+							Effect.flatMap((url) =>
+								imageInference(url, model, prompt, options),
+							),
+							Effect.provideContext(context),
+						),
+					speech: (model, input, options) =>
+						resolveBackend(model).pipe(
+							Effect.flatMap((url) =>
+								speechInference(url, model, input, options),
+							),
+							Effect.provideContext(context),
+						),
+				});
 			}),
-		);
-
-		// Refresh routing cache in one synchronous block.
-		modelsByBackend.clear();
-		for (const { url, models } of results) {
-			modelsByBackend.set(url, new Map(models.map((m) => [m.id, m])));
-		}
-
-		// Walk results in configured order so first-configured-wins.
-		const byUrl = new Map(results.map((r) => [r.url, r]));
-		const orderedModels: WorkerModel[] = [];
-		const seen = new Set<string>();
-		for (const url of backendUrls) {
-			const r = byUrl.get(url);
-			if (!r) continue;
-			for (const m of r.models) {
-				if (!seen.has(m.id)) {
-					seen.add(m.id);
-					orderedModels.push(m);
-				}
-			}
-		}
-		const loadedSet = new Set<string>();
-		for (const r of results) for (const id of r.loaded) loadedSet.add(id);
-
-		return { models: orderedModels, loaded: [...loadedSet] };
-	}
-
-	function pickBackend(model: string): string | undefined {
-		for (const url of backendUrls) {
-			if (modelsByBackend.get(url)?.has(model)) return url;
-		}
-		return undefined;
-	}
-
-	async function resolveBackend(model: string): Promise<string> {
-		const cached = pickBackend(model);
-		if (cached) return cached;
-		// Cache miss = the periodic refresh hasn't fired yet, or the backend
-		// pulled a new model since the last tick. Refresh once before giving up.
-		await refresh();
-		const url = pickBackend(model);
-		if (!url) {
-			const known = new Set<string>();
-			for (const map of modelsByBackend.values())
-				for (const id of map.keys()) known.add(id);
-			throw new Error(
-				`No configured backend serves model "${model}". ` +
-					(known.size > 0
-						? `Known models: ${[...known].join(", ")}`
-						: "No backends reported any models."),
-			);
-		}
-		return url;
-	}
-
-	return {
-		refresh,
-		chat: async function* (model, messages, options, signal) {
-			const url = await resolveBackend(model);
-			yield* chatInference(url, model, messages, options, signal);
-		},
-		embedding: async (model, input, signal) => {
-			const url = await resolveBackend(model);
-			return embeddingInference(url, model, input, signal);
-		},
-		image: async (model, prompt, options, signal) => {
-			const url = await resolveBackend(model);
-			return imageInference(url, model, prompt, options, signal);
-		},
-		speech: async (model, input, options, signal) => {
-			const url = await resolveBackend(model);
-			return speechInference(url, model, input, options, signal);
-		},
-	};
+		).pipe(Layer.provide(ModelDiscovery.layer));
 }

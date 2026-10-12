@@ -1,5 +1,5 @@
 {
-  "name": "@shoal.sh/cli",
+  "name": "@shoal.school/cli",
   "private": true,
   "type": "module",
   "bin": {
@@ -9,7 +9,8 @@
     "dev": "bun run bin.ts worker start --server wss://server.shoal.localhost/ws/workers --name dev --concurrency 4"
   },
   "dependencies": {
+    "@effect/platform-node": "4.0.3",
     "@shoal/protocol": "workspace:*",
-    "citty": "^0.2.2"
+    "effect": "4.0.3"
   }
 }

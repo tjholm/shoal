@@ -1,5 +1,12 @@
 {
   "apps": {
+    "apps/api": {
+      "name": "api.shoal"
+    },
+    "apps/dashboard": {
+      "name": "server.shoal",
+      "_comment": "Keeps the pre-split URL: the dashboard proxies /api and /ws to api.shoal, so workers and API clients can keep using server.shoal."
+    },
     "apps/cli": {
       "proxy": false,
       "_comment": "Skip CLI from `bun run dev` auto-discovery — its TLS+timing semantics differ from the HTTP apps. Run it separately with `bun run dev:cli`.",

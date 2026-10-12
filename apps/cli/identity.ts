@@ -1,55 +1,109 @@
-import crypto from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
-import path from "node:path";
+import {
+	Config,
+	Context,
+	Crypto,
+	Effect,
+	FileSystem,
+	Layer,
+	Option,
+	Path,
+	Schema,
+} from "effect";
+import { Hex } from "effect/encoding";
 
-export interface WorkerIdentity {
-  workerId: string;
-  secret: string;
+export const WorkerIdentity = Schema.Struct({
+	workerId: Schema.String,
+	secret: Schema.String,
+});
+export type WorkerIdentity = typeof WorkerIdentity.Type;
+
+const IdentityFile = Schema.fromJsonString(WorkerIdentity);
+
+export class IdentityFileError extends Schema.TaggedError<IdentityFileError>()(
+	"IdentityFileError",
+	{
+		path: Schema.String,
+		reason: Schema.String,
+		cause: Schema.Defect(),
+	},
+) {
+	get message(): string {
+		return (
+			`Failed to ${this.reason} worker identity at ${this.path}. ` +
+			`Delete the file to re-register as a new worker.`
+		);
+	}
 }
 
-/**
- * Identity is keyed by a hash of the server URL so a single host can connect
- * to multiple Shoal servers (prod / staging / homelab) without collision.
- */
-function identityPath(serverUrl: string): string {
-  const stateRoot =
-    process.env.XDG_STATE_HOME ??
-    path.join(os.homedir(), ".local", "state");
-  const dir = path.join(stateRoot, "shoal");
-  const tag = crypto
-    .createHash("sha256")
-    .update(serverUrl)
-    .digest("hex")
-    .slice(0, 16);
-  return path.join(dir, `identity-${tag}.json`);
-}
+/** The credentials this host uses to resume as the same worker on a given
+ *  Shoal server. */
+export class IdentityStore extends Context.Service<
+	IdentityStore,
+	{
+		readonly path: string;
+		readonly load: Effect.Effect<
+			Option.Option<WorkerIdentity>,
+			IdentityFileError
+		>;
+		save(identity: WorkerIdentity): Effect.Effect<void, IdentityFileError>;
+	}
+>()("@shoal/cli/identity/IdentityStore") {
+	/**
+	 * Identity is keyed by a hash of the server URL so a single host can
+	 * connect to multiple Shoal servers (prod / staging / homelab) without
+	 * collision.
+	 */
+	static readonly layer = (serverUrl: string) =>
+		Layer.effect(
+			IdentityStore,
+			Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const path = yield* Path.Path;
+				const crypto = yield* Crypto.Crypto;
 
-export function loadIdentity(serverUrl: string): WorkerIdentity | null {
-  const file = identityPath(serverUrl);
-  if (!existsSync(file)) return null;
-  try {
-    const raw = readFileSync(file, "utf8");
-    const parsed = JSON.parse(raw) as Partial<WorkerIdentity>;
-    if (typeof parsed.workerId !== "string" || typeof parsed.secret !== "string") {
-      throw new Error("malformed identity file");
-    }
-    return { workerId: parsed.workerId, secret: parsed.secret };
-  } catch (err) {
-    throw new Error(
-      `Failed to read worker identity at ${file}: ${(err as Error).message}. ` +
-        `Delete the file to re-register as a new worker.`,
-    );
-  }
-}
+				const stateRoot = yield* Config.String("XDG_STATE_HOME").pipe(
+					Config.withDefault(path.join(os.homedir(), ".local", "state")),
+				);
+				const digest = yield* crypto.digest(
+					"SHA-256",
+					new TextEncoder().encode(serverUrl),
+				);
+				const file = path.join(
+					stateRoot,
+					"shoal",
+					`identity-${Hex.encode(digest).slice(0, 16)}.json`,
+				);
 
-export function saveIdentity(serverUrl: string, identity: WorkerIdentity): void {
-  const file = identityPath(serverUrl);
-  mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-  writeFileSync(file, JSON.stringify(identity, null, 2), { mode: 0o600 });
-}
+				const load = Effect.gen(function* () {
+					if (!(yield* fs.exists(file))) return Option.none();
+					const raw = yield* fs.readFileString(file);
+					return Option.some(yield* Schema.decodeEffect(IdentityFile)(raw));
+				}).pipe(
+					Effect.mapError(
+						(cause) => new IdentityFileError({ path: file, reason: "read", cause }),
+					),
+				);
 
-/** Returns the path that would be used, for log messages and docs. */
-export function identityFilePath(serverUrl: string): string {
-  return identityPath(serverUrl);
+				const save = (identity: WorkerIdentity) =>
+					Effect.gen(function* () {
+						yield* fs.makeDirectory(path.dirname(file), {
+							recursive: true,
+							mode: 0o700,
+						});
+						yield* fs.writeFileString(
+							file,
+							JSON.stringify(identity, null, 2),
+							{ mode: 0o600 },
+						);
+					}).pipe(
+						Effect.mapError(
+							(cause) =>
+								new IdentityFileError({ path: file, reason: "write", cause }),
+						),
+					);
+
+				return IdentityStore.of({ path: file, load, save });
+			}),
+		);
 }

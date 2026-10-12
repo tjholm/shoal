@@ -6,6 +6,6 @@
     ".": "./index.ts"
   },
   "dependencies": {
-    "zod": "^3"
+    "effect": "4.0.3"
   }
 }

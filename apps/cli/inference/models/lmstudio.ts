@@ -3,7 +3,9 @@ import type {
 	ModelPurpose,
 	WorkerModel,
 } from "@shoal/protocol";
-import type { RawModelEntry } from "./types";
+import { Effect } from "effect";
+import { getJson } from "../backend";
+import { ModelsResponse, type RawModelEntry } from "./types";
 
 /**
  * LM Studio's `/v1/models` returns extended fields beyond the OpenAI spec:
@@ -14,69 +16,45 @@ import type { RawModelEntry } from "./types";
  * Reference: https://lmstudio.ai/docs/developer/rest/endpoints
  */
 
-interface LMStudioEntry extends RawModelEntry {
-	type?: string;
-	arch?: string;
-	state?: string;
-	max_context_length?: number;
-}
-
 /** True when the response carries LM Studio's enriched fields. We require
  *  *two* of (type, arch, state) so a backend that happens to attach a single
  *  `type` field doesn't get mistaken for LM Studio. */
 export function isLMStudioResponse(
 	data: ReadonlyArray<RawModelEntry>,
 ): boolean {
-	return data.some((m) => {
-		let hits = 0;
-		if (typeof (m as LMStudioEntry).type === "string") hits++;
-		if (typeof (m as LMStudioEntry).arch === "string") hits++;
-		if (typeof (m as LMStudioEntry).state === "string") hits++;
-		return hits >= 2;
-	});
+	return data.some(
+		(m) => [m.type, m.arch, m.state].filter((f) => f !== undefined).length >= 2,
+	);
 }
 
 export function normalizeLMStudioModels(
 	data: ReadonlyArray<RawModelEntry>,
 ): WorkerModel[] {
-	return data.map((m) => normalizeOne(m as LMStudioEntry));
+	return data.map(normalizeOne);
 }
 
 /** LM Studio reports residency inline on every `/v1/models` entry via `state:
  *  "loaded" | "not-loaded"`. We re-fetch rather than reusing the cached
  *  available-models list so a model unload between ticks shows up promptly. */
-export async function fetchLMStudioLoadedModels(
-	backendUrl: string,
-): Promise<string[]> {
-	const res = await fetch(`${backendUrl}/v1/models`);
-	if (!res.ok) {
-		throw new Error(`LM Studio /v1/models returned ${res.status}`);
-	}
-	const body = (await res.json()) as { data: Array<LMStudioEntry> };
-	return body.data.filter((m) => m.state === "loaded").map((m) => m.id);
-}
+export const fetchLMStudioLoadedModels = (backendUrl: string) =>
+	getJson(`${backendUrl}/v1/models`, ModelsResponse).pipe(
+		Effect.map((body) =>
+			body.data.filter((m) => m.state === "loaded").map((m) => m.id),
+		),
+	);
 
-function normalizeOne(m: LMStudioEntry): WorkerModel {
-	let purpose: ModelPurpose | undefined;
-	const capabilities: ModelCapability[] = [];
+const TYPE_MODEL: Record<
+	string,
+	{ purpose: ModelPurpose; capabilities?: ModelCapability[] }
+> = {
+	llm: { purpose: "chat" },
+	vlm: { purpose: "chat", capabilities: ["vision"] },
+	embeddings: { purpose: "embedding" },
+};
 
-	switch (m.type) {
-		case "llm":
-			purpose = "chat";
-			break;
-		case "vlm":
-			purpose = "chat";
-			capabilities.push("vision");
-			break;
-		case "embeddings":
-			purpose = "embedding";
-			break;
-		// Other types (or absent type) leave purpose undefined; the server's
-		// permit-unknown contract keeps the model routable.
-	}
-
-	const out: WorkerModel = { id: m.id };
-	if (purpose !== undefined) out.purpose = purpose;
-	if (capabilities.length > 0) out.capabilities = capabilities;
-	return out;
+// Other types (or absent type) leave purpose undefined; the server's
+// permit-unknown contract keeps the model routable.
+function normalizeOne(m: RawModelEntry): WorkerModel {
+	const known = m.type !== undefined ? TYPE_MODEL[m.type] : undefined;
+	return { id: m.id, ...known };
 }
