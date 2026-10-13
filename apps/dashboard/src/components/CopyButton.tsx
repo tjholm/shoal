@@ -1,6 +1,6 @@
 import { Check, Copy } from "lucide-react";
 import { useState } from "react";
-import { cn } from "../lib/utils";
+import { cn } from "@shoal/ui/lib/utils";
 
 /**
  * Copy `text` to the clipboard. The Clipboard API exists only in secure

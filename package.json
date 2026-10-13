@@ -10,6 +10,7 @@
     "dev": "dotenvx run -- portless",
     "dev:server": "dotenvx run -- bun --cwd=apps/api portless api.shoal bun run dev",
     "dev:cli": "dotenvx run -- bun --cwd=apps/cli dev",
+    "dev:desktop": "dotenvx run -- bun --cwd=apps/desktop run dev",
     "dev:web": "dotenvx run -- bun --cwd=apps/web portless web.shoal bun run dev",
     "db": "dotenvx run -- bun packages/db/cli.ts",
     "db:push": "dotenvx run -- bun run --filter @shoal/db push",

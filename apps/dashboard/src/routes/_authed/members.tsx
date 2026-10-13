@@ -3,14 +3,14 @@ import { useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-quer
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { CopyButton } from "../../components/CopyButton";
-import { Fact, Page, TableHead } from "../../components/Page";
-import { Button } from "../../components/ui/button";
+import { Fact, Page, TableHead } from "@shoal/ui/components/Page";
+import { Button } from "@shoal/ui/components/button";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
 	DropdownMenuTrigger,
-} from "../../components/ui/dropdown-menu";
+} from "@shoal/ui/components/dropdown-menu";
 import { authClient, unwrap } from "../../lib/auth-client";
 import { useCollections } from "../../lib/collections";
 import { authContextQuery, invitationsQuery, membersQuery } from "../../lib/queries";

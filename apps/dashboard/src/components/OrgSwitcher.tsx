@@ -4,7 +4,7 @@ import { useRouter } from "@tanstack/react-router";
 import { Check, ChevronsUpDown, Plus } from "lucide-react";
 import { useState } from "react";
 import { authClient } from "../lib/auth-client";
-import { Button } from "./ui/button";
+import { Button } from "@shoal/ui/components/button";
 import {
 	Dialog,
 	DialogContent,
@@ -12,7 +12,7 @@ import {
 	DialogFooter,
 	DialogHeader,
 	DialogTitle,
-} from "./ui/dialog";
+} from "@shoal/ui/components/dialog";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -20,7 +20,7 @@ import {
 	DropdownMenuLabel,
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
-} from "./ui/dropdown-menu";
+} from "@shoal/ui/components/dropdown-menu";
 
 interface Org {
 	id: string;

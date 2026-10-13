@@ -12,10 +12,10 @@ import {
 	ToolsIcon,
 	VisionIcon,
 } from "../../components/icons";
-import { Fact, Page, TableHead } from "../../components/Page";
-import { Segmented } from "../../components/Segmented";
+import { Fact, Page, TableHead } from "@shoal/ui/components/Page";
+import { Segmented } from "@shoal/ui/components/Segmented";
 import { Sparkline } from "../../components/Sparkline";
-import { Button } from "../../components/ui/button";
+import { Button } from "@shoal/ui/components/button";
 import {
 	Dialog,
 	DialogContent,
@@ -24,7 +24,7 @@ import {
 	DialogHeader,
 	DialogTitle,
 	DialogTrigger,
-} from "../../components/ui/dialog";
+} from "@shoal/ui/components/dialog";
 import { useCollections } from "../../lib/collections";
 import { serverConfigQuery, workerSeriesQuery } from "../../lib/queries";
 

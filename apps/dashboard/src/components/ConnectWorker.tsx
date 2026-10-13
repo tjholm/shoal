@@ -1,6 +1,6 @@
 import { Fragment, useState } from "react";
 import { CopyButton } from "./CopyButton";
-import { Segmented } from "./Segmented";
+import { Segmented } from "@shoal/ui/components/Segmented";
 import { CreateKeyStep, Step, Steps } from "./Steps";
 
 export interface BackendPreset {

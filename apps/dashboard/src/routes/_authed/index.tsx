@@ -12,12 +12,12 @@ import { useLiveQuery } from "@tanstack/react-db";
 import { useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { FitNumber } from "../../components/FitNumber";
+import { FitNumber } from "@shoal/ui/components/FitNumber";
 import { KIND_LABEL, KindIcon } from "../../components/icons";
-import { Fact, Page, Section, TableHead } from "../../components/Page";
-import { Segmented } from "../../components/Segmented";
+import { Fact, Page, Section, TableHead } from "@shoal/ui/components/Page";
+import { Segmented } from "@shoal/ui/components/Segmented";
 import { Sparkline } from "../../components/Sparkline";
-import { TextMorph } from "../../components/TextMorph";
+import { TextMorph } from "@shoal/ui/components/TextMorph";
 import { jobTokens, type SessionCollections, useCollections } from "../../lib/collections";
 import {
 	authContextQuery,

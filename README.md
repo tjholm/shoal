@@ -10,6 +10,9 @@ Workers run wherever you have GPUs (your desktop, a homelab box, a rented server
 - `apps/dashboard` — the dashboard, a Vite + TanStack Router single-page app. In development it proxies `/api` and `/ws` to `apps/api`.
 - `apps/web` — marketing / landing site.
 - `apps/cli` — the `shoal` CLI, built on Effect. `shoal worker start` connects a local worker to a server.
+- `apps/desktop` — an optional tray app ([Electrobun](https://framework.blackboard.sh/electrobun/)) that runs a worker on a desktop and lets you pause it or unload models.
+- `packages/client-core` — the worker itself (server connection, backend discovery, inference proxying, unloading), shared by the CLI and the desktop app.
+- `packages/ui` — the design system (theme, shadcn components) shared by the dashboard and the desktop app.
 - `packages/protocol` — the worker ↔ server WebSocket protocol, as Effect Schemas.
 - `packages/contracts` — the dashboard API (an Effect HttpApi) shared by `apps/api` and `apps/dashboard`.
 - `packages/db` — Drizzle schema, migrations, and the `Database` service (drizzle's Effect driver on `@effect/sql-pg`).

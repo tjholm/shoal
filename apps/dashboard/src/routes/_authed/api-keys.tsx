@@ -3,8 +3,8 @@ import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { CopyButton } from "../../components/CopyButton";
-import { Page, TableHead } from "../../components/Page";
-import { Button } from "../../components/ui/button";
+import { Page, TableHead } from "@shoal/ui/components/Page";
+import { Button } from "@shoal/ui/components/button";
 import {
 	Dialog,
 	DialogContent,
@@ -13,7 +13,7 @@ import {
 	DialogHeader,
 	DialogTitle,
 	DialogTrigger,
-} from "../../components/ui/dialog";
+} from "@shoal/ui/components/dialog";
 import { activeOrganizationId, authClient, unwrap } from "../../lib/auth-client";
 import { useCollections } from "../../lib/collections";
 import { apiKeysQuery } from "../../lib/queries";

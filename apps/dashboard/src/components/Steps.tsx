@@ -8,7 +8,7 @@ import {
 	unwrap,
 } from "../lib/auth-client";
 import { apiKeysQuery } from "../lib/queries";
-import { Button } from "./ui/button";
+import { Button } from "@shoal/ui/components/button";
 
 /** A numbered step, ticked once done. */
 export function Step({

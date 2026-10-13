@@ -36,6 +36,7 @@
       },
       "dependencies": {
         "@effect/platform-node": "4.0.3",
+        "@shoal/client-core": "workspace:*",
         "@shoal/protocol": "workspace:*",
         "effect": "4.0.3",
       },
@@ -46,6 +47,7 @@
         "@better-auth/api-key": "^1.7.7",
         "@shoal/contracts": "workspace:*",
         "@shoal/protocol": "workspace:*",
+        "@shoal/ui": "workspace:*",
         "@tailwindcss/vite": "^4.1.18",
         "@tanstack/db": "^0.6.5",
         "@tanstack/react-db": "^0.1.83",
@@ -56,18 +58,12 @@
         "@tanstack/react-router-devtools": "1.167.2",
         "@tanstack/router-plugin": "^1.132.0",
         "better-auth": "^1.7.7",
-        "class-variance-authority": "^0.7.1",
-        "clsx": "^2.1.1",
         "effect": "4.0.3",
         "lucide-react": "^1.14.0",
-        "radix-ui": "^1.4.3",
         "react": "^19.2.0",
         "react-dom": "^19.2.0",
         "recharts": "^3.8.1",
-        "tailwind-merge": "^3.0.2",
         "tailwindcss": "^4.1.18",
-        "torph": "0.1.3",
-        "tw-animate-css": "^1.3.6",
         "uuid": "14.0.2",
       },
       "devDependencies": {
@@ -83,6 +79,29 @@
         "typescript": "^5.7.2",
         "vite": "^8.0.0",
         "vitest": "^3.0.5",
+      },
+    },
+    "apps/desktop": {
+      "name": "@shoal/desktop",
+      "dependencies": {
+        "@effect/platform-bun": "4.0.3",
+        "@shoal/client-core": "workspace:*",
+        "@shoal/protocol": "workspace:*",
+        "@shoal/ui": "workspace:*",
+        "effect": "4.0.3",
+        "lucide-react": "^1.14.0",
+        "react": "^19.2.0",
+        "react-dom": "^19.2.0",
+      },
+      "devDependencies": {
+        "@tailwindcss/vite": "^4.1.18",
+        "@types/react": "^19.2.0",
+        "@types/react-dom": "^19.2.0",
+        "@vitejs/plugin-react": "^6.0.1",
+        "concurrently": "^9.2.1",
+        "electrobun": "2.0.4",
+        "tailwindcss": "^4.1.18",
+        "vite": "^8.0.0",
       },
     },
     "apps/web": {
@@ -109,6 +128,13 @@
         "vite": "^8.0.0",
       },
     },
+    "packages/client-core": {
+      "name": "@shoal/client-core",
+      "dependencies": {
+        "@shoal/protocol": "workspace:*",
+        "effect": "4.0.3",
+      },
+    },
     "packages/contracts": {
       "name": "@shoal/contracts",
       "dependencies": {
@@ -132,6 +158,29 @@
       "name": "@shoal/protocol",
       "dependencies": {
         "effect": "4.0.3",
+      },
+    },
+    "packages/ui": {
+      "name": "@shoal/ui",
+      "dependencies": {
+        "@fontsource-variable/geist": "^5.3.0",
+        "@fontsource-variable/geist-mono": "^5.3.0",
+        "@shoal/protocol": "workspace:*",
+        "class-variance-authority": "^0.7.1",
+        "clsx": "^2.1.1",
+        "lucide-react": "^1.14.0",
+        "radix-ui": "^1.4.3",
+        "tailwind-merge": "^3.0.2",
+        "torph": "0.1.3",
+        "tw-animate-css": "^1.3.6",
+      },
+      "devDependencies": {
+        "@types/react": "^19.2.0",
+        "@types/react-dom": "^19.2.0",
+      },
+      "peerDependencies": {
+        "react": "^19.2.0",
+        "react-dom": "^19.2.0",
       },
     },
   },
@@ -319,6 +368,10 @@
     "@floating-ui/react-dom": ["@floating-ui/react-dom@2.1.8", "", { "dependencies": { "@floating-ui/dom": "^1.7.6" }, "peerDependencies": { "react": ">=16.8.0", "react-dom": ">=16.8.0" } }, "sha512-cC52bHwM/n/CxS87FH0yWdngEZrjdtLW/qVruo68qg+prK7ZQ4YGdut2GyDVpoGeAYe/h899rVeOVm6Oi40k2A=="],
 
     "@floating-ui/utils": ["@floating-ui/utils@0.2.11", "", {}, "sha512-RiB/yIh78pcIxl6lLMG0CgBXAZ2Y0eVHqMPYugu+9U0AeT6YBeiJpf7lbdJNIugFP5SIjwNRgo4DhR1Qxi26Gg=="],
+
+    "@fontsource-variable/geist": ["@fontsource-variable/geist@5.3.0", "", {}, "sha512-j0m+vLQuG5XAYoHtGCVu0spvlGreR3EzpECUVzkFmI1mTVnAO38l/NEPDCFgZ177JxzYJCLSmTQibIiYPilGrA=="],
+
+    "@fontsource-variable/geist-mono": ["@fontsource-variable/geist-mono@5.3.0", "", {}, "sha512-vBbuwDEo9AkrqADMXOrlAR3DFcJi4/JxeuU43FoiQERnNwsfXNnvxvReZG02cQKmyk4DZkZdBZX3oTDvy2zBAw=="],
 
     "@jridgewell/gen-mapping": ["@jridgewell/gen-mapping@0.3.13", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.5.0", "@jridgewell/trace-mapping": "^0.3.24" } }, "sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA=="],
 
@@ -614,13 +667,19 @@
 
     "@shoal/api": ["@shoal/api@workspace:apps/api"],
 
+    "@shoal/client-core": ["@shoal/client-core@workspace:packages/client-core"],
+
     "@shoal/contracts": ["@shoal/contracts@workspace:packages/contracts"],
 
     "@shoal/dashboard": ["@shoal/dashboard@workspace:apps/dashboard"],
 
     "@shoal/db": ["@shoal/db@workspace:packages/db"],
 
+    "@shoal/desktop": ["@shoal/desktop@workspace:apps/desktop"],
+
     "@shoal/protocol": ["@shoal/protocol@workspace:packages/protocol"],
+
+    "@shoal/ui": ["@shoal/ui@workspace:packages/ui"],
 
     "@shoal/web": ["@shoal/web@workspace:apps/web"],
 
@@ -949,6 +1008,8 @@
     "eciesjs": ["eciesjs@0.4.18", "", { "dependencies": { "@ecies/ciphers": "^0.2.5", "@noble/ciphers": "^1.3.0", "@noble/curves": "^1.9.7", "@noble/hashes": "^1.8.0" } }, "sha512-wG99Zcfcys9fZux7Cft8BAX/YrOJLJSZ3jyYPfhZHqN2E+Ffx+QXBDsv3gubEgPtV6dTzJMSQUwk1H98/t/0wQ=="],
 
     "effect": ["effect@4.0.3", "", {}, "sha512-LoWn/Uwwx0JjHSDmBAAahx8sB+klzM6vsZovnbYowBNw6B4QScJLRLBByO61plvNiycx7HPN8FnsWUCu0eXW5w=="],
+
+    "electrobun": ["electrobun@2.0.4", "", { "bin": { "electrobun": "bin/electrobun.cjs" } }, "sha512-xuH4sE9A9eySgOjF+9mi9WuTv+Sa05cYY6eU5A4Rkkfek2zd59kzhWvwrb9xfJN4VPL+zM4FyTvFoH8j00DLMw=="],
 
     "electron-to-chromium": ["electron-to-chromium@1.5.349", "", {}, "sha512-QsWVGyRuY07Aqb234QytTfwd5d9AJlfNIQ5wIOl1L+PZDzI9d9+Fn0FRale/QYlFxt/bUnB0/nLd1jFPGxGK1A=="],
 

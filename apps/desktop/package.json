@@ -1,0 +1,32 @@
+{
+	"name": "@shoal/desktop",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "electrobun prepare && vite build && electrobun dev --watch",
+		"start": "electrobun prepare && vite build && electrobun dev",
+		"dev:hmr": "concurrently \"bun run hmr\" \"bun run start\"",
+		"hmr": "electrobun prepare && vite",
+		"build": "electrobun prepare && vite build && electrobun build --env=stable"
+	},
+	"dependencies": {
+		"@effect/platform-bun": "4.0.3",
+		"@shoal/client-core": "workspace:*",
+		"@shoal/protocol": "workspace:*",
+		"@shoal/ui": "workspace:*",
+		"effect": "4.0.3",
+		"lucide-react": "^1.14.0",
+		"react": "^19.2.0",
+		"react-dom": "^19.2.0"
+	},
+	"devDependencies": {
+		"@tailwindcss/vite": "^4.1.18",
+		"@types/react": "^19.2.0",
+		"@types/react-dom": "^19.2.0",
+		"@vitejs/plugin-react": "^6.0.1",
+		"concurrently": "^9.2.1",
+		"electrobun": "2.0.4",
+		"tailwindcss": "^4.1.18",
+		"vite": "^8.0.0"
+	}
+}

@@ -1,0 +1,16 @@
+{
+  "name": "@shoal/client-core",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./identity": "./src/identity.ts",
+    "./inference": "./src/inference/index.ts",
+    "./inference/models": "./src/inference/models/index.ts",
+    "./settings": "./src/settings.ts",
+    "./worker": "./src/worker/run.ts"
+  },
+  "dependencies": {
+    "@shoal/protocol": "workspace:*",
+    "effect": "4.0.3"
+  }
+}

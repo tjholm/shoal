@@ -15,8 +15,8 @@ import {
 	StatusBadge,
 	StatusGlyph,
 	workerStatus,
-} from "../../components/StatusBadge";
-import { Button } from "../../components/ui/button";
+} from "@shoal/ui/components/StatusBadge";
+import { Button } from "@shoal/ui/components/button";
 import {
 	serverConfigQuery,
 	workerDetailQuery,

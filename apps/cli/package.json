@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@effect/platform-node": "4.0.3",
+    "@shoal/client-core": "workspace:*",
     "@shoal/protocol": "workspace:*",
     "effect": "4.0.3"
   }
