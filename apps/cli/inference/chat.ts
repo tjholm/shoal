@@ -116,8 +116,10 @@ export const chatInference = (
 		// OpenAI shim, vLLM, llama.cpp server, OpenAI itself. Backends that
 		// don't recognize it ignore the field, and we report no usage.
 		stream_options: { include_usage: true },
-		max_tokens: options?.maxTokens ?? 512,
-		temperature: options?.temperature ?? 1.0,
+		// Left out when the client didn't set them, so the backend's own
+		// defaults apply (no token limit; the model's configured temperature).
+		max_tokens: options?.maxTokens,
+		temperature: options?.temperature,
 		...(options?.tools && options.tools.length > 0
 			? { tools: options.tools }
 			: {}),

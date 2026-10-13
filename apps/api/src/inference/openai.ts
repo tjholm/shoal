@@ -22,6 +22,8 @@ const ChatCompletionRequest = Schema.Struct({
 	messages: Schema.Array(Schema.Unknown),
 	stream: optionalNullable(Schema.Boolean),
 	max_tokens: optionalNullable(Schema.Number),
+	// OpenAI's replacement for `max_tokens`, sent by newer clients and SDKs.
+	max_completion_tokens: optionalNullable(Schema.Number),
 	temperature: optionalNullable(Schema.Number),
 	tools: optionalNullable(Schema.Array(Schema.Unknown)),
 	tool_choice: Schema.optionalKey(Schema.Unknown),
@@ -214,7 +216,7 @@ export const openAIRoutes = Layer.effectDiscard(
 					model: body.model,
 					input: body.messages,
 					...definedOnly({
-						maxTokens: body.max_tokens,
+						maxTokens: body.max_completion_tokens ?? body.max_tokens,
 						temperature: body.temperature,
 						tools: body.tools,
 						toolChoice: body.tool_choice,
