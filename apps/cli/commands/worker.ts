@@ -2,9 +2,9 @@ import { FetchHttpClient } from "effect/http";
 import { Array as Arr, Config, Effect, Layer, Redacted, Schema } from "effect";
 import { Command, Flag } from "effect/cli";
 import { Socket } from "effect/socket";
-import { IdentityStore } from "../identity";
-import { InferenceClient } from "../inference";
-import { runWorker } from "../worker/run";
+import { IdentityStore } from "@shoal/client-core/identity";
+import { InferenceClient } from "@shoal/client-core/inference";
+import { runWorker } from "@shoal/client-core/worker";
 
 class NoBackendsConfigured extends Schema.TaggedError<NoBackendsConfigured>()(
 	"NoBackendsConfigured",

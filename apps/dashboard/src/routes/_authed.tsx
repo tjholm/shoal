@@ -5,7 +5,7 @@ import { ConnectWorkerDialog } from "../components/ConnectWorkerDialog";
 import { CopyButton } from "../components/CopyButton";
 import { MobileNav } from "../components/MobileNav";
 import { OrgSwitcher } from "../components/OrgSwitcher";
-import { ShoalWordmark } from "../components/ShoalMark";
+import { ShoalWordmark } from "@shoal/ui/components/ShoalMark";
 import { UserMenu } from "../components/UserMenu";
 import { useCanCreateKeys } from "../lib/permissions";
 import { authContextQuery } from "../lib/queries";

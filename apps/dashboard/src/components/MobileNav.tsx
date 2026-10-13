@@ -2,14 +2,14 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { Menu } from "lucide-react";
 import { useState } from "react";
 import { isNavItemActive, navItems } from "./AppSidebar";
-import { Button } from "./ui/button";
+import { Button } from "@shoal/ui/components/button";
 import {
   Sheet,
   SheetContent,
   SheetHeader,
   SheetTitle,
   SheetTrigger,
-} from "./ui/sheet";
+} from "@shoal/ui/components/sheet";
 
 export function MobileNav() {
   const { location } = useRouterState();

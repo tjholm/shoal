@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { CopyButton } from "./CopyButton";
 import { CreateKeyStep, Step, Steps } from "./Steps";
-import { Button } from "./ui/button";
+import { Button } from "@shoal/ui/components/button";
 import {
 	Dialog,
 	DialogContent,
@@ -9,7 +9,7 @@ import {
 	DialogHeader,
 	DialogTitle,
 	DialogTrigger,
-} from "./ui/dialog";
+} from "@shoal/ui/components/dialog";
 
 /** The header's Connect your app action: create a key and copy a working
  *  request for any OpenAI client. */

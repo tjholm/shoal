@@ -1,0 +1,397 @@
+/*
+ * Import after `@import 'tailwindcss'` in each app's stylesheet. Fonts are
+ * bundled rather than fetched so the desktop app renders the same offline.
+ */
+@import '@fontsource-variable/geist';
+@import '@fontsource-variable/geist-mono';
+@import 'tw-animate-css';
+
+@source '../components';
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Shoal design system ("Dark water, one light"). Depth surfaces step up in
+ * value toward the viewer; Lumen is the only bright colour and always means
+ * something (the router, a live connection, the primary action, focus).
+ * Signals are for state only.
+ */
+:root {
+  /* Depth */
+  --depth-abyss: #070b10;
+  --depth-trench: #0b1118;
+  --depth-shelf: #101821;
+  --depth-reef: #16212d;
+  --line-default: #213041;
+  --line-strong-default: #2f4357;
+
+  /* Foam (text) */
+  --text-primary: #e6edf3;
+  --text-secondary: #9aabbd;
+  --text-tertiary: #6b7d90;
+
+  /* Signals */
+  --signal-lumen: #3fe0d0;
+  --signal-lumen-ink: #03221f;
+  --signal-amber: #f2b54a;
+  --signal-coral: #ff7a6b;
+  --signal-current: #6aa8ff;
+  --signal-lumen-wash: rgba(63, 224, 208, 0.12);
+  --signal-lumen-edge: rgba(63, 224, 208, 0.32);
+  --signal-amber-wash: rgba(242, 181, 74, 0.12);
+  --signal-amber-edge: rgba(242, 181, 74, 0.32);
+  --signal-coral-wash: rgba(255, 122, 107, 0.12);
+  --signal-coral-edge: rgba(255, 122, 107, 0.32);
+  --signal-current-wash: rgba(106, 168, 255, 0.12);
+  --signal-current-edge: rgba(106, 168, 255, 0.32);
+  --focus-ring: 0 0 0 1px var(--signal-lumen), 0 0 0 4px rgba(63, 224, 208, 0.24);
+  color-scheme: dark;
+}
+
+/*
+ * The design system is drawn dark-first. This light theme is derived from
+ * its "on light" logo rules: Lumen becomes Lumen Deep, and the signals are
+ * darkened so text keeps 4.5:1 on light surfaces.
+ */
+.light {
+  --depth-abyss: #f6f8fa;
+  --depth-trench: #edf1f5;
+  --depth-shelf: #ffffff;
+  --depth-reef: #eef2f6;
+  --line-default: #d6dee6;
+  --line-strong-default: #b9c6d3;
+
+  --text-primary: #0b1118;
+  --text-secondary: #3d4c5c;
+  --text-tertiary: #5b6b7c;
+
+  --signal-lumen: #0b7f74;
+  --signal-lumen-ink: #ffffff;
+  --signal-amber: #9a6200;
+  --signal-coral: #c2412f;
+  --signal-current: #2563c9;
+  --signal-lumen-wash: rgba(11, 127, 116, 0.1);
+  --signal-lumen-edge: rgba(11, 127, 116, 0.32);
+  --signal-amber-wash: rgba(154, 98, 0, 0.1);
+  --signal-amber-edge: rgba(154, 98, 0, 0.32);
+  --signal-coral-wash: rgba(194, 65, 47, 0.1);
+  --signal-coral-edge: rgba(194, 65, 47, 0.32);
+  --signal-current-wash: rgba(37, 99, 201, 0.1);
+  --signal-current-edge: rgba(37, 99, 201, 0.32);
+  --focus-ring: 0 0 0 1px var(--signal-lumen), 0 0 0 4px rgba(11, 127, 116, 0.2);
+  color-scheme: light;
+}
+
+/* App-level names the pages use, mapped onto the design system. */
+:root,
+.light {
+  --bg-base: var(--depth-abyss);
+  --surface: var(--depth-shelf);
+  --surface-strong: var(--depth-reef);
+  --surface-sunken: var(--depth-trench);
+  --line: var(--line-default);
+  --line-strong: var(--line-strong-default);
+
+  --sea-ink: var(--text-primary);
+  --sea-ink-soft: var(--text-secondary);
+  --sea-ink-muted: var(--text-tertiary);
+
+  --lagoon: var(--signal-lumen);
+  --lagoon-deep: var(--signal-lumen);
+  --lagoon-soft: var(--signal-lumen-wash);
+  --lagoon-line: var(--signal-lumen-edge);
+
+  --kicker: var(--text-tertiary);
+  --chip-bg: var(--depth-reef);
+  --chip-line: var(--line-strong-default);
+  --header-bg: var(--depth-abyss);
+  --link-bg-hover: var(--depth-reef);
+
+  /* shadcn semantic tokens */
+  --background: var(--depth-abyss);
+  --foreground: var(--text-primary);
+  --card: var(--depth-shelf);
+  --card-foreground: var(--text-primary);
+  --popover: var(--depth-reef);
+  --popover-foreground: var(--text-primary);
+  --primary: var(--signal-lumen);
+  --primary-foreground: var(--signal-lumen-ink);
+  --secondary: var(--depth-reef);
+  --secondary-foreground: var(--text-primary);
+  --muted: var(--depth-reef);
+  --muted-foreground: var(--text-secondary);
+  --accent: var(--depth-reef);
+  --accent-foreground: var(--text-primary);
+  --destructive: var(--signal-coral);
+  --destructive-foreground: var(--text-primary);
+  --border: var(--line-default);
+  --input: var(--line-strong-default);
+  --ring: var(--signal-lumen);
+  --radius: 4px;
+
+  --sidebar: var(--depth-abyss);
+  --sidebar-foreground: var(--text-secondary);
+  --sidebar-primary: var(--signal-lumen);
+  --sidebar-primary-foreground: var(--signal-lumen-ink);
+  --sidebar-accent: var(--depth-reef);
+  --sidebar-accent-foreground: var(--text-primary);
+  --sidebar-border: var(--line-default);
+  --sidebar-ring: var(--signal-lumen);
+}
+
+@theme inline {
+  --font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+
+  --color-lumen: var(--signal-lumen);
+  --color-lumen-ink: var(--signal-lumen-ink);
+  --color-amber: var(--signal-amber);
+  --color-coral: var(--signal-coral);
+  --color-lumen-wash: var(--signal-lumen-wash);
+  --color-lumen-edge: var(--signal-lumen-edge);
+  --color-amber-wash: var(--signal-amber-wash);
+  --color-amber-edge: var(--signal-amber-edge);
+  --color-coral-wash: var(--signal-coral-wash);
+  --color-coral-edge: var(--signal-coral-edge);
+  --color-current-wash: var(--signal-current-wash);
+  --color-current-edge: var(--signal-current-edge);
+  --color-abyss: var(--depth-abyss);
+  --color-trench: var(--depth-trench);
+  --color-shelf: var(--depth-shelf);
+  --color-reef: var(--depth-reef);
+  --color-line: var(--line-default);
+  --color-line-strong: var(--line-strong-default);
+  --color-foam: var(--text-primary);
+  --color-mist: var(--text-secondary);
+  --color-silt: var(--text-tertiary);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* radius.xs 2 · sm 4 (buttons, inputs) · md 8 (cards) · lg 12 (panels, dialogs) */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 12px;
+
+  /* Depth comes from surface value and hairlines, never shadows. */
+  --shadow-2xs: none;
+  --shadow-xs: none;
+  --shadow-sm: none;
+  --shadow: none;
+  --shadow-md: none;
+  --shadow-lg: none;
+  --shadow-xl: none;
+  --shadow-2xl: none;
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+/* Element defaults. Layered, so Tailwind utilities on an element win. */
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  :focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+  }
+  ::selection {
+    background: var(--signal-lumen-wash);
+  }
+  html,
+  body,
+  #app {
+    min-height: 100%;
+  }
+
+  body {
+    margin: 0;
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    background-color: var(--background);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  code {
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+    border: 1px solid var(--line);
+    background: var(--surface-sunken);
+    border-radius: 2px;
+    padding: 1px 5px;
+  }
+
+  /* Native selects keep the platform's option list but draw their own
+     chevron, so they match inputs instead of the OS default. */
+  select {
+    appearance: none;
+    padding-right: 2.25rem;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 20 20' fill='none' stroke='%239AABBD' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 8 4 4 4-4'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: 12px;
+    cursor: pointer;
+  }
+
+  select:focus-visible {
+    border-color: var(--signal-lumen);
+  }
+
+  option {
+    background-color: var(--depth-trench);
+    color: var(--text-primary);
+  }
+
+  pre code {
+    border: 0;
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+    font-size: inherit;
+    color: inherit;
+  }
+
+  button,
+  .island-shell,
+  a {
+    transition: background-color 120ms ease-out, color 120ms ease-out, border-color 120ms ease-out;
+  }
+}
+
+/* Shared classes. Layered below utilities, so a utility can adjust them. */
+@layer components {
+  /* Inline links in body copy. */
+  .text-link {
+    color: var(--lagoon-deep);
+    text-decoration: underline;
+    text-decoration-color: color-mix(in oklab, var(--lagoon-deep) 50%, transparent);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+  }
+
+  .text-link:hover {
+    color: var(--lagoon);
+  }
+
+  /* Page column: fluid beside the sidebar, centred once the screen is
+     wider than a comfortable reading width. */
+  .page-wrap {
+    width: 100%;
+    max-width: 1200px;
+    margin-inline: auto;
+    box-sizing: border-box;
+  }
+
+  /* Page titles: the design system's app h1, sans 600. */
+  .display-title {
+    font-family: var(--font-sans);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  /* Mono label: 11/16, +0.08em, uppercase, Silt. */
+  .label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--sea-ink-muted);
+  }
+
+  /* Numbers are mono and tabular. */
+  .metric {
+    font-family: var(--font-mono);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
+
+  /* Flat outlined panel — replaces the old glass card. */
+  .island-shell {
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: 8px;
+  }
+
+  /* Section eyebrow — small uppercase muted label. */
+  .island-kicker {
+    font-family: var(--font-mono);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 500;
+    font-size: 11px;
+    line-height: 16px;
+    color: var(--sea-ink-muted);
+  }
+
+  .rise-in {
+    animation: rise-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+
+  /* The live dot's slow pulse: the only looping motion. */
+  .live-pulse {
+    animation: live-pulse 2400ms ease-in-out infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .rise-in,
+    .live-pulse {
+      animation: none;
+    }
+  }
+}
+
+@keyframes live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

@@ -3,7 +3,7 @@ import { useState } from "react";
 import { serverConfigQuery } from "../lib/queries";
 import { ConnectSteps } from "./ConnectWorker";
 import { PlusIcon } from "./icons";
-import { Button } from "./ui/button";
+import { Button } from "@shoal/ui/components/button";
 import {
 	Dialog,
 	DialogContent,
@@ -11,7 +11,7 @@ import {
 	DialogHeader,
 	DialogTitle,
 	DialogTrigger,
-} from "./ui/dialog";
+} from "@shoal/ui/components/dialog";
 
 /** The header's Connect worker action: create a token and copy the worker
  *  command, without leaving the page. */

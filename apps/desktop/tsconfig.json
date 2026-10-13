@@ -1,0 +1,28 @@
+{
+	// Not extending .hutch/devkit/tsconfig.json: it sets baseUrl, which this
+	// repo's TypeScript version rejects. These paths mirror its mappings.
+	"compilerOptions": {
+		"lib": ["ESNext", "DOM", "DOM.Iterable"],
+		"jsx": "react-jsx",
+		"target": "ESNext",
+		"module": "ESNext",
+		"moduleDetection": "force",
+		"moduleResolution": "bundler",
+		"allowImportingTsExtensions": true,
+		"verbatimModuleSyntax": true,
+		"noEmit": true,
+		"strict": true,
+		"skipLibCheck": true,
+		"noFallthroughCasesInSwitch": true,
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
+		"types": ["bun-types", "vite/client"],
+		"paths": {
+			"electrobun": ["./.hutch/devkit/api/sdks/main/index.ts"],
+			"electrobun/main": ["./.hutch/devkit/api/sdks/main/index.ts"],
+			"electrobun/main/*": ["./.hutch/devkit/api/sdks/main/entries/*"],
+			"electrobun/view": ["./.hutch/devkit/api/browser/index.ts"]
+		}
+	},
+	"include": ["src/**/*", "*.config.ts"]
+}

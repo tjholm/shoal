@@ -4,7 +4,7 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { workersCollection } from "../lib/collections";
 import { membersQuery } from "../lib/queries";
 import { KeyIcon, MembersIcon, OverviewIcon } from "./icons";
-import { ShoalGlyph } from "./ShoalMark";
+import { ShoalGlyph } from "@shoal/ui/components/ShoalMark";
 
 export interface NavItem {
 	title: string;

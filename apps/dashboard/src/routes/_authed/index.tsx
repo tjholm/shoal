@@ -12,8 +12,8 @@ import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { KIND_LABEL, KindIcon } from "../../components/icons";
-import { Fact, Page, Section, TableHead } from "../../components/Page";
-import { Segmented } from "../../components/Segmented";
+import { Fact, Page, Section, TableHead } from "@shoal/ui/components/Page";
+import { Segmented } from "@shoal/ui/components/Segmented";
 import { Sparkline } from "../../components/Sparkline";
 import { workersCollection } from "../../lib/collections";
 import {
