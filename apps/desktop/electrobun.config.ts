@@ -4,7 +4,12 @@ export default {
 	app: {
 		name: "Shoal",
 		identifier: "school.shoal.desktop",
-		version: "0.0.1",
+		// Set from the release tag in CI (.github/workflows/publish.yml).
+		version: process.env.SHOAL_VERSION ?? "0.0.0-dev",
+	},
+	release: {
+		// The latest published release; drafts and prereleases are skipped.
+		baseUrl: "https://github.com/tjholm/shoal/releases/latest/download",
 	},
 	runtime: {
 		// The app lives in the tray; closing the setup window must not quit it.

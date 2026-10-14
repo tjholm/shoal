@@ -1,5 +1,9 @@
 name: release
 
+# A pushed v* tag builds everything into a draft GitHub Release, which is
+# published only once every job succeeds. The desktop updater reads
+# releases/latest, so it never sees a release that is missing its files.
+
 on:
   push:
     tags: ['v*']
@@ -22,11 +26,21 @@ jobs:
       - name: Test
         run: bun test --pass-with-no-tests
 
-  release-cli:
+  create-release:
     needs: checks
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    steps:
+      - run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --draft --generate-notes --title "$GITHUB_REF_NAME"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  release-cli:
+    needs: checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
       # npm trusted publishing exchanges this OIDC token for a publish token.
       id-token: write
     steps:
@@ -83,10 +97,6 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - uses: softprops/action-gh-release@v2
-        with:
-          generate_release_notes: true
-
       # --- binaries (disabled: re-enable once the image/binary namespace is stable, e.g. after repo transfer) ---
       # - name: Build binaries
       #   run: |
@@ -105,6 +115,62 @@ jobs:
       #   with:
       #     files: dist/bin/*
       #     generate_release_notes: true
+
+  release-desktop:
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        # Hutch only builds for the OS and architecture it runs on.
+        runner: [macos-14, ubuntu-24.04, ubuntu-24.04-arm, windows-2025]
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    env:
+      # Keep in step with hutchVersion in flake.nix.
+      HUTCH_VERSION: 0.27.1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install Hutch
+        if: runner.os != 'Windows'
+        run: |
+          curl -fsSL https://hutch.blackboard.sh/hutch/install.sh | sh -s -- --version "$HUTCH_VERSION" --no-modify-path
+          echo "$HOME/.hutch/bin" >> "$GITHUB_PATH"
+      - name: Install Hutch
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & ([scriptblock]::Create((irm https://hutch.blackboard.sh/hutch/install.ps1))) -Version $env:HUTCH_VERSION -NoModifyPath
+          Join-Path $HOME ".hutch\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+
+      - run: bun install --frozen-lockfile
+
+      - name: Build
+        working-directory: apps/desktop
+        # v1.2.3 -> 1.2.3, matching the CLI's version.
+        run: SHOAL_VERSION="${GITHUB_REF_NAME#v}" hutch run build
+
+      - name: Upload to the draft release
+        run: gh release upload "$GITHUB_REF_NAME" apps/desktop/artifacts/* --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-release:
+    needs: [release-cli, release-server, release-desktop]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   release-server:
     needs: checks
