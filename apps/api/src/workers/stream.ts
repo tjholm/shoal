@@ -65,7 +65,7 @@ export const workerStreamRoutes = Layer.effectDiscard(
 							return [
 								remember({
 									...previous,
-									...liveFields(live, now),
+									...liveFields(live, now, previous.availableModels),
 									maxConcurrent: Option.isSome(live)
 										? live.value.maxConcurrent
 										: previous.maxConcurrent,

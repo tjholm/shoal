@@ -94,7 +94,6 @@ function Fleet({ workers }: { workers: ReadonlyArray<WorkerInfo> }) {
 				/>
 			}
 		>
-			<Coverage workers={online} />
 			<div className="flex flex-col gap-3">
 				{shown.map((w) => (
 					<WorkerCard
@@ -110,80 +109,6 @@ function Fleet({ workers }: { workers: ReadonlyArray<WorkerInfo> }) {
 				)}
 			</div>
 		</Page>
-	);
-}
-
-interface Kind {
-	label: string;
-	icon: React.ReactNode;
-	serves: (m: WorkerModel) => boolean;
-}
-
-const KINDS: ReadonlyArray<Kind> = [
-	{ label: "Text", icon: <KindIcon purpose="chat" size={16} />, serves: (m) => m.purpose === "chat" },
-	{
-		label: "Vision",
-		icon: <VisionIcon size={16} />,
-		serves: (m) => m.capabilities?.includes("vision") ?? false,
-	},
-	{
-		label: "Embedding",
-		icon: <KindIcon purpose="embedding" size={16} />,
-		serves: (m) => m.purpose === "embedding",
-	},
-	{ label: "Image", icon: <KindIcon purpose="image" size={16} />, serves: (m) => m.purpose === "image" },
-	{ label: "Speech", icon: <KindIcon purpose="tts" size={16} />, serves: (m) => m.purpose === "tts" },
-];
-
-/** Which kinds of request the online fleet can take, and how warm. */
-function Coverage({ workers }: { workers: ReadonlyArray<WorkerInfo> }) {
-	return (
-		<section
-			aria-label="Modality coverage"
-			className="rise-in grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-px overflow-hidden rounded-md border border-line bg-line"
-		>
-			{KINDS.map((kind) => {
-				const serving = workers.filter((w) => w.availableModels.some(kind.serves));
-				const hot = serving.filter((w) =>
-					w.availableModels.some((m) => kind.serves(m) && w.loadedModels.includes(m.id)),
-				);
-				const note =
-					serving.length === 0
-						? { text: "no worker serves it", tone: "text-silt" }
-						: hot.length > 0
-							? {
-									text: `hot on ${hot.length} ${hot.length === 1 ? "worker" : "workers"}`,
-									tone: "text-silt",
-								}
-							: serving.length === 1
-								? { text: `only ${workerName(serving[0])} · cold`, tone: "text-amber" }
-								: { text: "cold · first call loads", tone: "text-amber" };
-				return (
-					<div key={kind.label} className="flex flex-col gap-2.5 bg-shelf px-4 py-3.5">
-						<div className="flex items-center justify-between">
-							<span className="flex items-center gap-2 text-[13px] font-medium text-foam">
-								<span className="text-mist">{kind.icon}</span>
-								{kind.label}
-							</span>
-							<span
-								className={`font-mono text-xs ${serving.length === 0 ? "text-silt" : serving.length === 1 ? "text-amber" : "text-mist"}`}
-							>
-								{serving.length} {serving.length === 1 ? "worker" : "workers"}
-							</span>
-						</div>
-						<div aria-hidden="true" className="flex gap-[3px]">
-							{[0, 1, 2].map((i) => (
-								<span
-									key={i}
-									className={`h-1 flex-1 rounded-[1px] ${i < hot.length ? "bg-lumen" : i < serving.length ? "bg-line-strong" : "bg-reef"}`}
-								/>
-							))}
-						</div>
-						<span className={`text-xs ${note.tone}`}>{note.text}</span>
-					</div>
-				);
-			})}
-		</section>
 	);
 }
 

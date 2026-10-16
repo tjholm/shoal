@@ -69,6 +69,8 @@ export interface WorkerRegistration {
 	readonly keyId: string | null;
 	readonly firstSeenAt: Date;
 	readonly lastSeenAt: Date;
+	/** What the worker last advertised, kept while it's offline. */
+	readonly lastModels: ReadonlyArray<WorkerModel>;
 }
 
 export class WorkerAuthFailed extends Schema.TaggedError<WorkerAuthFailed>()(
@@ -398,8 +400,10 @@ export class WorkerRegistry extends Context.Service<
 				);
 			});
 
-			const registrations = (organizationId: string) =>
-				database.query((db) =>
+			const registrations = Effect.fn("WorkerRegistry.registrations")(function* (
+				organizationId: string,
+			) {
+				const rows = yield* database.query((db) =>
 					db
 						.select({
 							workerId: schema.worker.id,
@@ -407,11 +411,18 @@ export class WorkerRegistry extends Context.Service<
 							keyId: schema.worker.keyId,
 							firstSeenAt: schema.worker.firstSeenAt,
 							lastSeenAt: schema.worker.lastSeenAt,
+							models: schema.worker.models,
 						})
 						.from(schema.worker)
 						.where(eq(schema.worker.organizationId, organizationId))
 						.orderBy(desc(schema.worker.lastSeenAt)),
 				);
+				return yield* Effect.forEach(rows, ({ models, ...row }) =>
+					storedModels(row.workerId, models).pipe(
+						Effect.map((lastModels) => ({ ...row, lastModels })),
+					),
+				);
+			});
 
 			const rename = Effect.fn("WorkerRegistry.rename")(function* (
 				workerId: string,
@@ -516,6 +527,16 @@ function modelsServeTask(
 }
 
 const decodeStoredModels = Schema.decodeUnknownOption(Schema.Array(WorkerModel));
+
+/** A worker's stored `models` column, or none if it no longer decodes. */
+export const storedModels = (workerId: string, raw: unknown) =>
+	Option.match(decodeStoredModels(raw), {
+		onNone: () =>
+			Effect.logWarning(`stored models for worker ${workerId} don't decode; showing none`).pipe(
+				Effect.as<ReadonlyArray<WorkerModel>>([]),
+			),
+		onSome: Effect.succeed,
+	});
 
 /** Order-insensitive set equality, so a backend reporting `[a, b]` then
  *  `[b, a]` isn't a change. */

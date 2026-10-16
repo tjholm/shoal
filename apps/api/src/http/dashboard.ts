@@ -14,7 +14,7 @@ import { HttpApiBuilder } from "effect/http-api";
 import { Auth } from "../auth";
 import { ShoalConfig } from "../config";
 import { Usage } from "../usage";
-import { WorkerRegistry } from "../workers/registry";
+import { storedModels, WorkerRegistry } from "../workers/registry";
 import { liveFields, snapshotWorkers } from "../workers/views";
 
 /** Run `f` with the caller's active organization. */
@@ -163,6 +163,7 @@ const WorkersHandlers = HttpApiBuilder.group(
 									lastSeenAt: schema.worker.lastSeenAt,
 									keyId: schema.worker.keyId,
 									keyName: schema.apikey.name,
+									models: schema.worker.models,
 								})
 								.from(schema.worker)
 								.leftJoin(schema.apikey, eq(schema.worker.keyId, schema.apikey.id))
@@ -180,10 +181,11 @@ const WorkersHandlers = HttpApiBuilder.group(
 						.workerTotals({ organizationId, workerId })
 						.pipe(Effect.orDie);
 					const live = yield* registry.get(workerId);
+					const lastModels = yield* storedModels(workerId, row.models);
 					return {
 						workerId,
 						name: row.name,
-						...liveFields(live, yield* Clock.currentTimeMillis),
+						...liveFields(live, yield* Clock.currentTimeMillis, lastModels),
 						firstSeenAt: row.firstSeenAt.getTime(),
 						lastSeenAt: row.lastSeenAt.getTime(),
 						totalJobs: totals.jobs,

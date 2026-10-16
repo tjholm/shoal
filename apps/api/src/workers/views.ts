@@ -1,4 +1,5 @@
 import type { WorkerInfo } from "@shoal/contracts";
+import type { WorkerModel } from "@shoal/protocol";
 import { Clock, Effect, Option } from "effect";
 import { Usage, type UsageTotals } from "../usage";
 import { type LiveWorker, type WorkerRegistration, WorkerRegistry } from "./registry";
@@ -6,10 +7,11 @@ import { type LiveWorker, type WorkerRegistration, WorkerRegistry } from "./regi
 const noUsage: UsageTotals = { jobs: 0, promptTokens: 0, completionTokens: 0 };
 
 /** The live-state fields of a `WorkerInfo`, from the registry's view of a
- *  worker (or its absence when offline). */
+ *  worker, or its last advertised models when offline. */
 export function liveFields(
 	live: Option.Option<LiveWorker>,
 	now: number,
+	lastModels: ReadonlyArray<WorkerModel>,
 ): Pick<
 	WorkerInfo,
 	"online" | "loadedModels" | "availableModels" | "inFlight" | "maxConcurrent" | "connectedMs"
@@ -18,7 +20,7 @@ export function liveFields(
 		onNone: () => ({
 			online: false,
 			loadedModels: [],
-			availableModels: [],
+			availableModels: lastModels,
 			inFlight: 0,
 			maxConcurrent: null,
 			connectedMs: null,
@@ -43,7 +45,7 @@ const toInfo = (
 	workerId: row.workerId,
 	name: row.name,
 	keyId: row.keyId,
-	...liveFields(live, now),
+	...liveFields(live, now, row.lastModels),
 	lastSeenAt: row.lastSeenAt.getTime(),
 	firstSeenAt: row.firstSeenAt.getTime(),
 	totalPromptTokens: usage.promptTokens,
