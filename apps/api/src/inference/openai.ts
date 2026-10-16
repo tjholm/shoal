@@ -315,9 +315,9 @@ export const openAIRoutes = Layer.effectDiscard(
 				};
 
 				if (body.stream === true) {
-					// Dispatch now so a missing worker is still a 503, then stream
-					// headers immediately: a generation can take minutes, longer than
-					// proxies wait for response headers.
+					// Dispatch now so a missing or busy worker is still an error
+					// status, then stream headers immediately: a generation can take
+					// minutes, longer than proxies wait for response headers.
 					const { events } = yield* dispatcher.dispatch(job);
 					return sseResponse(imageEvents(resultOf(events), options));
 				}

@@ -48,6 +48,14 @@ export interface LiveWorker {
 
 type MutableWorker = { -readonly [K in keyof LiveWorker]: LiveWorker[K] };
 
+/** The outcome of `reserve`: a claimed slot, or why there isn't one. */
+export type Reservation =
+	| { readonly _tag: "Reserved"; readonly worker: LiveWorker }
+	/** Connected workers serve the model for the task, all at capacity. */
+	| { readonly _tag: "Busy" }
+	/** No connected worker serves the model for the task. */
+	| { readonly _tag: "NotServed" };
+
 export type WorkerChange =
 	/** Any change to a worker's live state, including connect and disconnect. */
 	| { readonly type: "live"; readonly workerId: string }
@@ -111,11 +119,7 @@ export class WorkerRegistry extends Context.Service<
 		/** Claim a slot on the best worker for this job: one advertising the model
 		 *  for this task with spare capacity, preferring workers that already
 		 *  have it loaded, then the least busy. */
-		reserve(
-			organizationId: string,
-			model: string,
-			task: ModelTask,
-		): Effect.Effect<Option.Option<LiveWorker>>;
+		reserve(organizationId: string, model: string, task: ModelTask): Effect.Effect<Reservation>;
 		/** Return a slot claimed with `reserve`. */
 		release(workerId: string, outcome: "completed" | "abandoned"): Effect.Effect<void>;
 		get(workerId: string): Effect.Effect<Option.Option<LiveWorker>>;
@@ -304,10 +308,12 @@ export class WorkerRegistry extends Context.Service<
 				Effect.suspend(() => {
 					let warm: MutableWorker | undefined;
 					let cold: MutableWorker | undefined;
+					let served = false;
 					for (const w of workers.values()) {
 						if (w.organizationId !== organizationId) continue;
-						if (w.inFlight >= w.maxConcurrent) continue;
 						if (!servesTask(w, model, task)) continue;
+						served = true;
+						if (w.inFlight >= w.maxConcurrent) continue;
 						if (w.loadedModels.includes(model)) {
 							if (!warm || w.inFlight < warm.inFlight) warm = w;
 						} else if (!cold || w.inFlight < cold.inFlight) {
@@ -315,9 +321,13 @@ export class WorkerRegistry extends Context.Service<
 						}
 					}
 					const picked = warm ?? cold;
-					if (!picked) return Effect.succeed(Option.none<LiveWorker>());
+					if (!picked) {
+						return Effect.succeed<Reservation>({ _tag: served ? "Busy" : "NotServed" });
+					}
 					picked.inFlight++;
-					return emitLive(picked).pipe(Effect.as(Option.some<LiveWorker>(picked)));
+					return emitLive(picked).pipe(
+						Effect.as<Reservation>({ _tag: "Reserved", worker: picked }),
+					);
 				});
 
 			const release = (workerId: string, outcome: "completed" | "abandoned") =>

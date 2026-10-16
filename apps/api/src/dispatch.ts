@@ -60,14 +60,29 @@ export interface JobResult {
 	readonly usage?: TokenUsage;
 }
 
-export class NoWorkerAvailable extends Schema.TaggedError<NoWorkerAvailable>()(
-	"NoWorkerAvailable",
+/** No connected worker advertises the model for this task. */
+export class ModelNotServed extends Schema.TaggedError<ModelNotServed>()(
+	"ModelNotServed",
 	{ model: Schema.String, task: Schema.String },
 ) {
 	get message(): string {
-		return `No workers available for model "${this.model}" task "${this.task}"`;
+		return `No connected worker serves model "${this.model}" for task "${this.task}"`;
 	}
 }
+
+/** Connected workers serve the model for this task, but every one is at its
+ *  concurrency limit. */
+export class WorkersBusy extends Schema.TaggedError<WorkersBusy>()("WorkersBusy", {
+	model: Schema.String,
+	task: Schema.String,
+}) {
+	get message(): string {
+		return `Every worker serving model "${this.model}" for task "${this.task}" is busy`;
+	}
+}
+
+/** Why a job couldn't be given to a worker. */
+export type NoWorkerAvailable = ModelNotServed | WorkersBusy;
 
 export class JobFailed extends Schema.TaggedError<JobFailed>()("JobFailed", {
 	message: Schema.String,
@@ -136,18 +151,19 @@ export class Dispatcher extends Context.Service<
 			const dispatch = Effect.fn("Dispatcher.dispatch")(function* (
 				request: JobRequest,
 			) {
-				const reserved = yield* registry.reserve(
+				const reservation = yield* registry.reserve(
 					request.organizationId,
 					request.model,
 					request.task,
 				);
-				if (Option.isNone(reserved)) {
-					return yield* new NoWorkerAvailable({
-						model: request.model,
-						task: request.task,
-					});
+				const unavailable = { model: request.model, task: request.task };
+				switch (reservation._tag) {
+					case "NotServed":
+						return yield* new ModelNotServed(unavailable);
+					case "Busy":
+						return yield* new WorkersBusy(unavailable);
 				}
-				const worker = reserved.value;
+				const worker = reservation.worker;
 				const jobId = yield* newId(crypto);
 				const events = yield* Queue.unbounded<JobEvent, JobFailed | Cause.Done>();
 				jobs.set(jobId, {
