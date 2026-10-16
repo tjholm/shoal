@@ -110,43 +110,46 @@ function Kpis({
 	const series = (pick: (t: UsageTotals) => number) => buckets.map(pick);
 	const avgSeconds = (t: UsageTotals | undefined) =>
 		t?.avgDurationMs != null ? t.avgDurationMs / 1000 : null;
+	// Columns step 1 → 2 → 4 with the grid's own width, so rows are always full.
 	return (
-		<section
-			aria-label="Usage"
-			className="rise-in grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-px overflow-hidden rounded-md border border-line bg-line"
-		>
-			<Kpi
-				label="Requests"
-				value={current?.jobs}
-				bars={series((b) => b.jobs)}
-				note={change(current?.jobs, previous?.jobs)}
-			/>
-			<Kpi
-				label="Tokens out"
-				value={current && current.completionTokens + unrecordedOutputTokens}
-				bars={series((b) => b.completionTokens)}
-				note={change(current?.completionTokens, previous?.completionTokens)}
-			/>
-			<Kpi
-				label="Tokens in"
-				value={current?.promptTokens}
-				bars={series((b) => b.promptTokens)}
-				note={change(current?.promptTokens, previous?.promptTokens)}
-			/>
-			<Kpi
-				label="Avg request"
-				value={avgSeconds(current)?.toFixed(1) ?? "—"}
-				unit="s"
-				bars={series((b) => b.avgDurationMs ?? 0)}
-				note={{
-					text:
-						avgSeconds(previous) != null
-							? `previously ${avgSeconds(previous)?.toFixed(1)} s`
-							: "no earlier requests",
-					tone: "text-mist",
-				}}
-			/>
-		</section>
+		<div className="@container">
+			<section
+				aria-label="Usage"
+				className="rise-in grid grid-cols-1 gap-px overflow-hidden rounded-md border border-line bg-line @min-[400px]:grid-cols-2 @min-[800px]:grid-cols-4"
+			>
+				<Kpi
+					label="Requests"
+					value={current?.jobs}
+					bars={series((b) => b.jobs)}
+					note={change(current?.jobs, previous?.jobs)}
+				/>
+				<Kpi
+					label="Tokens out"
+					value={current && current.completionTokens + unrecordedOutputTokens}
+					bars={series((b) => b.completionTokens)}
+					note={change(current?.completionTokens, previous?.completionTokens)}
+				/>
+				<Kpi
+					label="Tokens in"
+					value={current?.promptTokens}
+					bars={series((b) => b.promptTokens)}
+					note={change(current?.promptTokens, previous?.promptTokens)}
+				/>
+				<Kpi
+					label="Avg request"
+					value={avgSeconds(current)?.toFixed(1) ?? "—"}
+					unit="s"
+					bars={series((b) => b.avgDurationMs ?? 0)}
+					note={{
+						text:
+							avgSeconds(previous) != null
+								? `previously ${avgSeconds(previous)?.toFixed(1)} s`
+								: "no earlier requests",
+						tone: "text-mist",
+					}}
+				/>
+			</section>
+		</div>
 	);
 }
 
