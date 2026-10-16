@@ -114,8 +114,11 @@ interface Job {
 	readonly model: string;
 	readonly startedAt: number;
 	readonly events: Queue.Queue<JobEvent, JobFailed | Cause.Done>;
-	/** Deltas received so far: a live estimate of output tokens. */
+	/** Deltas received so far, reasoning included: a live estimate of output
+	 *  tokens. */
 	outputChunks: number;
+	/** Whether the latest delta was reasoning rather than answer. */
+	thinking: boolean;
 }
 
 /** A snapshot of a job that's running, or finished with its usage still
@@ -126,6 +129,7 @@ export interface RunningJob {
 	readonly model: string;
 	readonly startedAt: number;
 	readonly outputChunks: number;
+	readonly thinking: boolean;
 	/** The job's exact output tokens once it has finished; null while running. */
 	readonly completionTokens: number | null;
 }
@@ -262,6 +266,7 @@ export class Dispatcher extends Context.Service<
 					startedAt: yield* Clock.currentTimeMillis,
 					events,
 					outputChunks: 0,
+					thinking: false,
 				};
 				jobs.set(jobId, job);
 				yield* emit(job.organizationId, { type: "upsert", job: runningJob(jobId, job) });
@@ -342,7 +347,7 @@ export class Dispatcher extends Context.Service<
 				// rollups, so record nothing without it.
 				const tokens = job.task === "chat" ? done.usage : undefined;
 				if (!tokens) return emit(job.organizationId, { type: "deleted", jobId });
-				const finished = { ...runningJob(jobId, job), completionTokens: tokens.completionTokens };
+				const finished = runningJob(jobId, job, tokens.completionTokens);
 				recording.set(jobId, { organizationId: job.organizationId, job: finished });
 				return emit(job.organizationId, { type: "upsert", job: finished }).pipe(
 					Effect.andThen(recordUsage(jobId, job, tokens, done.finishReason)),
@@ -357,6 +362,7 @@ export class Dispatcher extends Context.Service<
 					switch (message.type) {
 						case "delta":
 							job.outputChunks++;
+							job.thinking = isReasoningOnly(message);
 							progressed.add(message.jobId);
 							yield* Queue.offer(job.events, message);
 							return;
@@ -416,15 +422,25 @@ export class Dispatcher extends Context.Service<
 	);
 }
 
-function runningJob(jobId: string, job: Job): RunningJob {
+/** A snapshot of `job`. Pass `completionTokens` once it has finished; a
+ *  finished job isn't thinking. */
+function runningJob(jobId: string, job: Job, completionTokens: number | null = null): RunningJob {
 	return {
 		jobId,
 		workerId: job.workerId,
 		model: job.model,
 		startedAt: job.startedAt,
 		outputChunks: job.outputChunks,
-		completionTokens: null,
+		thinking: completionTokens === null && job.thinking,
+		completionTokens,
 	};
+}
+
+/** Whether a delta is only reasoning: the model is thinking, not answering. */
+function isReasoningOnly(delta: Extract<JobEvent, { type: "delta" }>): boolean {
+	return (
+		delta.reasoning !== undefined && delta.content === undefined && delta.toolCalls === undefined
+	);
 }
 
 /** Run a job's events to completion and reassemble its result. */

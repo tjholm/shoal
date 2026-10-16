@@ -26,6 +26,7 @@ const job = (overrides: Partial<ActiveJob>): ActiveJob => ({
 	model: "gemma",
 	startedAt: 0,
 	outputChunks: 0,
+	thinking: false,
 	completionTokens: null,
 	...overrides,
 });

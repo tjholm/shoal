@@ -157,16 +157,7 @@ export const runWorker = Effect.fn("runWorker")(function* (
 													}),
 												),
 											)
-										: send({
-												type: "delta",
-												jobId,
-												...(chunk.content !== undefined
-													? { content: chunk.content }
-													: {}),
-												...(chunk.toolCalls !== undefined
-													? { toolCalls: chunk.toolCalls }
-													: {}),
-											}),
+										: send({ type: "delta", jobId, ...withoutTag(chunk) }),
 								),
 							);
 					case "embedding":
@@ -311,3 +302,10 @@ export const runWorker = Effect.fn("runWorker")(function* (
 		);
 	}
 });
+
+/** A chunk's fields without its `_tag`: a chat delta's fields are the
+ *  protocol `delta` message's. */
+const withoutTag = <T extends { readonly _tag: string }>({
+	_tag,
+	...fields
+}: T): Omit<T, "_tag"> => fields;

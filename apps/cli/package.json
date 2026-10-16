@@ -6,6 +6,7 @@
     "shoal": "./bin.ts"
   },
   "scripts": {
+    "test": "bun test",
     "dev": "bun run bin.ts worker start --server wss://server.shoal.localhost/ws/workers --name dev --concurrency 4"
   },
   "dependencies": {

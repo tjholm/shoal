@@ -15,6 +15,7 @@ export type ChatChunk =
 			readonly _tag: "Delta";
 			readonly content?: string;
 			readonly toolCalls?: ReadonlyArray<ToolCallDelta>;
+			readonly reasoning?: string;
 	  }
 	| {
 			readonly _tag: "Done";
@@ -39,6 +40,11 @@ const CompletionChunk = Schema.Struct({
 				delta: optionalNullable(
 					Schema.Struct({
 						content: optionalNullable(Schema.String),
+						// Thinking models' reasoning: Ollama sends `reasoning`; vLLM,
+						// LM Studio and llama.cpp send `reasoning_content`. Reasoning
+						// left inline in `content` as <think> tags isn't detected.
+						reasoning: optionalNullable(Schema.String),
+						reasoning_content: optionalNullable(Schema.String),
 						tool_calls: optionalNullable(
 							Schema.Array(
 								Schema.Struct({
@@ -59,7 +65,7 @@ const CompletionChunk = Schema.Struct({
 		),
 	),
 });
-type CompletionChunk = typeof CompletionChunk.Type;
+export type CompletionChunk = typeof CompletionChunk.Type;
 
 const decodeCompletionChunk = Schema.decodeUnknownOption(
 	Schema.fromJsonString(CompletionChunk),
@@ -68,13 +74,11 @@ const decodeCompletionChunk = Schema.decodeUnknownOption(
 const isFinishReason = (s: string | null | undefined): s is FinishReason =>
 	s === "stop" || s === "length" || s === "tool_calls";
 
-function toDelta(chunk: CompletionChunk): Option.Option<ChatChunk> {
+export function toDelta(chunk: CompletionChunk): Option.Option<ChatChunk> {
 	const delta = chunk.choices?.[0]?.delta;
 	if (!delta) return Option.none();
-	const content =
-		typeof delta.content === "string" && delta.content.length > 0
-			? delta.content
-			: undefined;
+	const content = delta.content || undefined;
+	const reasoning = delta.reasoning || delta.reasoning_content || undefined;
 	const toolCalls =
 		delta.tool_calls && delta.tool_calls.length > 0
 			? delta.tool_calls.map(
@@ -88,18 +92,21 @@ function toDelta(chunk: CompletionChunk): Option.Option<ChatChunk> {
 					}),
 				)
 			: undefined;
-	if (content === undefined && toolCalls === undefined) return Option.none();
+	if (content === undefined && toolCalls === undefined && reasoning === undefined) {
+		return Option.none();
+	}
 	return Option.some({
 		_tag: "Delta",
 		...(content !== undefined ? { content } : {}),
 		...(toolCalls !== undefined ? { toolCalls } : {}),
+		...(reasoning !== undefined ? { reasoning } : {}),
 	});
 }
 
 /**
  * Run chat inference via the backend. Emits OpenAI-shaped delta fragments
- * (content text and/or tool_call slices) as they stream in, then a single
- * terminal `Done` chunk.
+ * (content text, tool_call slices and/or reasoning) as they stream in, then
+ * a single terminal `Done` chunk.
  */
 export const chatInference = (
 	backendUrl: string,

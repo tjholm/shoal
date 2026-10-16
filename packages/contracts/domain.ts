@@ -128,9 +128,11 @@ export const ActiveJob = Schema.Struct({
 	model: Schema.String,
 	/** Server epoch milliseconds the job was dispatched. */
 	startedAt: Schema.Number,
-	/** Output chunks the worker has streamed so far: an estimate of tokens,
-	 *  about one each for chat. */
+	/** Output chunks the worker has streamed so far, reasoning included: an
+	 *  estimate of tokens, about one each for chat. */
 	outputChunks: Schema.Number,
+	/** Whether the model is reasoning rather than writing its answer. */
+	thinking: Schema.Boolean,
 	/** Exact output tokens once the job has finished and its usage is being
 	 *  recorded; null while it runs. The job leaves the feed once the usage
 	 *  totals include it. */
