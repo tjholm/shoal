@@ -127,8 +127,9 @@ export class WorkerRegistry extends Context.Service<
 		release(workerId: string, outcome: "completed" | "abandoned"): Effect.Effect<void>;
 		get(workerId: string): Effect.Effect<Option.Option<LiveWorker>>;
 		live(organizationId: string): Effect.Effect<ReadonlyArray<LiveWorker>>;
-		/** Distinct model ids served by the org's connected workers. */
-		availableModels(organizationId: string): Effect.Effect<ReadonlyArray<string>>;
+		/** Distinct model ids the org's workers serve, or last advertised before
+		 *  going offline. */
+		availableModels(organizationId: string): Effect.Effect<ReadonlyArray<string>, DatabaseError>;
 		/** Whether any worker in the org, connected or not, last advertised the
 		 *  model for this task. */
 		hasServed(
@@ -371,15 +372,25 @@ export class WorkerRegistry extends Context.Service<
 					[...workers.values()].filter((w) => w.organizationId === organizationId),
 				);
 
-			const availableModels = (organizationId: string) =>
-				Effect.sync(() => {
-					const ids = new Set<string>();
-					for (const w of workers.values()) {
-						if (w.organizationId !== organizationId) continue;
-						for (const m of w.availableModels) ids.add(m.id);
-					}
-					return [...ids];
-				});
+			const availableModels = Effect.fn("WorkerRegistry.availableModels")(function* (
+				organizationId: string,
+			) {
+				const rows = yield* database.query((db) =>
+					db
+						.select({ workerId: schema.worker.id, models: schema.worker.models })
+						.from(schema.worker)
+						.where(eq(schema.worker.organizationId, organizationId)),
+				);
+				const ids = new Set<string>();
+				for (const row of rows) {
+					for (const m of yield* storedModels(row.workerId, row.models)) ids.add(m.id);
+				}
+				for (const w of workers.values()) {
+					if (w.organizationId !== organizationId) continue;
+					for (const m of w.availableModels) ids.add(m.id);
+				}
+				return [...ids];
+			});
 
 			const hasServed = Effect.fn("WorkerRegistry.hasServed")(function* (
 				organizationId: string,

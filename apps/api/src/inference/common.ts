@@ -82,8 +82,8 @@ export const decodeBody = <S extends Schema.ConstraintDecoder<unknown>>(schema: 
 	});
 
 /** Render failures of an inference handler: API errors with their status, a
- *  model no worker serves as 404, a model only offline workers serve as 502,
- *  busy workers as 503, anything else (a failed job) as 500. */
+ *  model no worker serves as 404, a model only offline workers serve or busy
+ *  workers as 503, anything else (a failed job) as 500. */
 export const renderFailures =
 	(errorBody: ErrorBody) =>
 	<R>(
@@ -113,7 +113,7 @@ function httpFailure(err: { readonly _tag: string }): { status: number; code?: E
 		case "ModelNotServed":
 			return { status: 404, code: "model_not_found" };
 		case "ModelOffline":
-			return { status: 502, code: "model_offline" };
+			return { status: 503, code: "model_offline" };
 		case "WorkersBusy":
 			return { status: 503, code: "workers_busy" };
 		default:
