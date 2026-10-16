@@ -1,4 +1,5 @@
 import type {
+	ActiveJob,
 	ModelUsage,
 	UsageEventRow,
 	UsageRange,
@@ -10,11 +11,14 @@ import type { ModelPurpose } from "@shoal/protocol";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { FitNumber } from "../../components/FitNumber";
 import { KIND_LABEL, KindIcon } from "../../components/icons";
 import { Fact, Page, Section, TableHead } from "../../components/Page";
 import { Segmented } from "../../components/Segmented";
 import { Sparkline } from "../../components/Sparkline";
+import { TextMorph } from "../../components/TextMorph";
+import { jobTokens, useActivity } from "../../lib/activity";
 import { workersCollection } from "../../lib/collections";
 import {
 	authContextQuery,
@@ -76,7 +80,8 @@ function Overview() {
 				/>
 			}
 		>
-			<Kpis summary={summary.data} />
+			<Kpis summary={summary.data} organizationId={auth?.activeOrg?.id} />
+			<RunningNow organizationId={auth?.activeOrg?.id} workers={workers} />
 			<div className="flex flex-wrap items-start gap-6">
 				<ModelsReachable models={models} range={range} />
 				<RecentRequests rows={recent} />
@@ -85,7 +90,15 @@ function Overview() {
 	);
 }
 
-function Kpis({ summary }: { summary: UsageSummary | undefined }) {
+function Kpis({
+	summary,
+	organizationId,
+}: {
+	summary: UsageSummary | undefined;
+	organizationId: string | undefined;
+}) {
+	// Running jobs' output ticks into "Tokens out" until usage records it.
+	const { unrecordedOutputTokens } = useActivity(organizationId);
 	const buckets = summary?.buckets ?? [];
 	const current = summary?.current;
 	const previous = summary?.previous;
@@ -99,19 +112,19 @@ function Kpis({ summary }: { summary: UsageSummary | undefined }) {
 		>
 			<Kpi
 				label="Requests"
-				value={current ? formatCount(current.jobs) : "—"}
+				value={current?.jobs}
 				bars={series((b) => b.jobs)}
 				note={change(current?.jobs, previous?.jobs)}
 			/>
 			<Kpi
 				label="Tokens out"
-				value={current ? formatNumber(current.completionTokens) : "—"}
+				value={current && current.completionTokens + unrecordedOutputTokens}
 				bars={series((b) => b.completionTokens)}
 				note={change(current?.completionTokens, previous?.completionTokens)}
 			/>
 			<Kpi
 				label="Tokens in"
-				value={current ? formatNumber(current.promptTokens) : "—"}
+				value={current?.promptTokens}
 				bars={series((b) => b.promptTokens)}
 				note={change(current?.promptTokens, previous?.promptTokens)}
 			/>
@@ -158,7 +171,8 @@ function Kpi({
 	note,
 }: {
 	label: string;
-	value: string;
+	/** A count shows as many digits as fit; a string morphs as it changes. */
+	value: number | string | undefined;
 	unit?: string;
 	bars: ReadonlyArray<number>;
 	note: { text: string; tone: string };
@@ -166,8 +180,12 @@ function Kpi({
 	return (
 		<div className="flex flex-col gap-2.5 bg-shelf px-[18px] py-4">
 			<span className="label">{label}</span>
-			<span className="metric text-[28px] leading-8 text-foam">
-				{value}
+			<span className="metric flex min-w-0 items-baseline text-[28px] leading-8 text-foam">
+				{typeof value === "number" ? (
+					<FitNumber value={value} className="flex-1" />
+				) : (
+					<TextMorph as="span">{value ?? "—"}</TextMorph>
+				)}
 				{unit && <span className="ml-1.5 text-[13px] tracking-normal text-silt">{unit}</span>}
 			</span>
 			<Sparkline values={bars} />
@@ -302,6 +320,118 @@ function ModelRow({ model }: { model: ReachableModel }) {
 			</span>
 		</div>
 	);
+}
+
+const RUNNING_COLUMNS = "minmax(0,2fr) minmax(0,1fr) 80px 110px 90px";
+
+/** Live jobs. Subscribes here, not in the page, so only this section and the
+ *  KPIs re-render as counts tick. */
+function RunningNow({
+	organizationId,
+	workers,
+}: {
+	organizationId: string | undefined;
+	workers: ReadonlyArray<WorkerInfo>;
+}) {
+	const { jobs, serverClockOffset } = useActivity(organizationId);
+	const now = useNow(jobs.length > 0 ? 500 : null) + serverClockOffset;
+	const names = new Map(workers.map((w) => [w.workerId, w.name]));
+	return (
+		<Section
+			title="Running now"
+			actions={
+				<span className="font-mono text-[11px] text-silt">
+					<TextMorph as="span">{jobs.length}</TextMorph> live
+				</span>
+			}
+		>
+			{jobs.length === 0 ? (
+				<p className="px-[18px] py-4 text-[13px] text-silt">Nothing running right now.</p>
+			) : (
+				// Rolling digits briefly overflow their cell vertically; clip that so
+				// it can't flash a scrollbar, while narrow screens still scroll sideways.
+				<div className="overflow-x-auto overflow-y-hidden">
+					<div className="min-w-[560px]">
+						<TableHead columns={RUNNING_COLUMNS}>
+							<span>Model</span>
+							<span>Worker</span>
+							<span className="text-right">Elapsed</span>
+							<span className="text-right">Tokens out</span>
+							<span className="text-right">Avg tok/s</span>
+						</TableHead>
+						{jobs.map((job) => (
+							<RunningRow
+								key={job.jobId}
+								job={job}
+								workerName={names.get(job.workerId) ?? null}
+								now={now}
+							/>
+						))}
+					</div>
+				</div>
+			)}
+		</Section>
+	);
+}
+
+function RunningRow({
+	job,
+	workerName,
+	now,
+}: {
+	job: ActiveJob;
+	workerName: string | null;
+	now: number;
+}) {
+	// `now` is on the server's clock; the floor avoids dividing by zero.
+	const seconds = Math.max(0.1, (now - job.startedAt) / 1000);
+	const tokens = jobTokens(job);
+	const rate = tokens > 0 ? Math.round(tokens / seconds) : null;
+	return (
+		<div
+			className="rise-in grid items-center gap-4 border-b border-reef px-[18px] py-2.5 font-mono text-[12.5px] last:border-b-0"
+			style={{ gridTemplateColumns: RUNNING_COLUMNS }}
+		>
+			<span className="flex min-w-0 items-center gap-2.5">
+				<span
+					aria-hidden="true"
+					className="live-pulse size-1.5 shrink-0 rounded-full bg-lumen"
+				/>
+				<span className="truncate text-foam">{job.model}</span>
+			</span>
+			<Link
+				to="/workers/$workerId"
+				params={{ workerId: job.workerId }}
+				className="truncate text-mist hover:text-foam"
+			>
+				{workerName ?? job.workerId.slice(0, 8)}
+			</Link>
+			<span className="text-right text-mist tabular-nums">{formatElapsed(seconds)}</span>
+			<span className="text-right text-foam tabular-nums">
+				<FitNumber value={tokens} />
+			</span>
+			<span className="text-right text-mist tabular-nums">
+				{rate === null ? "—" : <TextMorph as="span">{rate}</TextMorph>}
+			</span>
+		</div>
+	);
+}
+
+/** The current time, refreshed every `intervalMs`; frozen while null. */
+function useNow(intervalMs: number | null): number {
+	const [now, setNow] = useState(() => Date.now());
+	useEffect(() => {
+		if (intervalMs === null) return;
+		setNow(Date.now());
+		const id = setInterval(() => setNow(Date.now()), intervalMs);
+		return () => clearInterval(id);
+	}, [intervalMs]);
+	return now;
+}
+
+function formatElapsed(seconds: number): string {
+	if (seconds < 60) return `${Math.floor(seconds)}s`;
+	return `${Math.floor(seconds / 60)}m ${String(Math.floor(seconds % 60)).padStart(2, "0")}s`;
 }
 
 const FINISH = {

@@ -38,6 +38,7 @@
     "recharts": "^3.8.1",
     "tailwind-merge": "^3.0.2",
     "tailwindcss": "^4.1.18",
+    "torph": "0.1.3",
     "tw-animate-css": "^1.3.6",
     "uuid": "14.0.2"
   },
