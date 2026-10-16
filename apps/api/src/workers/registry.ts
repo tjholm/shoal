@@ -6,7 +6,7 @@ import {
 	type ServerMessage,
 	TASK_PURPOSE,
 	type WorkerMessage,
-	type WorkerModel,
+	WorkerModel,
 } from "@shoal/protocol";
 import { and, desc, eq } from "drizzle-orm";
 import {
@@ -53,7 +53,8 @@ export type Reservation =
 	| { readonly _tag: "Reserved"; readonly worker: LiveWorker }
 	/** Connected workers serve the model for the task, all at capacity. */
 	| { readonly _tag: "Busy" }
-	/** No connected worker serves the model for the task. */
+	/** No connected worker serves the model for the task. An offline worker
+	 *  still might. */
 	| { readonly _tag: "NotServed" };
 
 export type WorkerChange =
@@ -126,6 +127,13 @@ export class WorkerRegistry extends Context.Service<
 		live(organizationId: string): Effect.Effect<ReadonlyArray<LiveWorker>>;
 		/** Distinct model ids served by the org's connected workers. */
 		availableModels(organizationId: string): Effect.Effect<ReadonlyArray<string>>;
+		/** Whether any worker in the org, connected or not, last advertised the
+		 *  model for this task. */
+		hasServed(
+			organizationId: string,
+			model: string,
+			task: ModelTask,
+		): Effect.Effect<boolean, DatabaseError>;
 		/** Every worker ever registered in the org, most recently seen first. */
 		registrations(
 			organizationId: string,
@@ -301,8 +309,25 @@ export class WorkerRegistry extends Context.Service<
 						worker.availableModels.length !== models.length ||
 						worker.availableModels.some((m, i) => m.id !== models[i].id);
 					worker.availableModels = models;
-					if (changed) yield* emitLive(worker);
+					if (!changed) return;
+					yield* emitLive(worker);
+					// An empty list usually means the worker's backend is stopped, not
+					// that it stopped serving its models, so keep what it last served.
+					if (models.length > 0) yield* storeModels(workerId, models);
 				});
+
+			const storeModels = (workerId: string, models: ReadonlyArray<WorkerModel>) =>
+				database
+					.query((db) =>
+						db.update(schema.worker).set({ models }).where(eq(schema.worker.id, workerId)),
+					)
+					.pipe(
+						// Routing to connected workers doesn't read the stored list, so a
+						// failed write only costs telling "offline" from "not served".
+						Effect.catch((err) =>
+							Effect.logWarning(`failed to store models for worker ${workerId}`, err),
+						),
+					);
 
 			const reserve = (organizationId: string, model: string, task: ModelTask) =>
 				Effect.suspend(() => {
@@ -353,6 +378,25 @@ export class WorkerRegistry extends Context.Service<
 					}
 					return [...ids];
 				});
+
+			const hasServed = Effect.fn("WorkerRegistry.hasServed")(function* (
+				organizationId: string,
+				model: string,
+				task: ModelTask,
+			) {
+				const rows = yield* database.query((db) =>
+					db
+						.select({ models: schema.worker.models })
+						.from(schema.worker)
+						.where(eq(schema.worker.organizationId, organizationId)),
+				);
+				return rows.some((row) =>
+					Option.match(decodeStoredModels(row.models), {
+						onNone: () => false,
+						onSome: (models) => modelsServeTask(models, model, task),
+					}),
+				);
+			});
 
 			const registrations = (organizationId: string) =>
 				database.query((db) =>
@@ -438,6 +482,7 @@ export class WorkerRegistry extends Context.Service<
 					}),
 				live,
 				availableModels,
+				hasServed,
 				registrations,
 				rename,
 				remove,
@@ -457,10 +502,20 @@ function normalizeName(name: string | undefined): string | null {
  *  declared purpose matches the task or is unknown. An explicit mismatch
  *  excludes it — that's the enforcement contract. */
 function servesTask(worker: LiveWorker, model: string, task: ModelTask): boolean {
-	const entry = worker.availableModels.find((m) => m.id === model);
+	return modelsServeTask(worker.availableModels, model, task);
+}
+
+function modelsServeTask(
+	models: ReadonlyArray<WorkerModel>,
+	model: string,
+	task: ModelTask,
+): boolean {
+	const entry = models.find((m) => m.id === model);
 	if (!entry) return false;
 	return entry.purpose === undefined || entry.purpose === TASK_PURPOSE[task];
 }
+
+const decodeStoredModels = Schema.decodeUnknownOption(Schema.Array(WorkerModel));
 
 /** Order-insensitive set equality, so a backend reporting `[a, b]` then
  *  `[b, a]` isn't a change. */

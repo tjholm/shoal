@@ -1,3 +1,4 @@
+import type { DatabaseError } from "@shoal/db/database";
 import type {
 	FinishReason,
 	GeneratedImage,
@@ -60,13 +61,24 @@ export interface JobResult {
 	readonly usage?: TokenUsage;
 }
 
-/** No connected worker advertises the model for this task. */
+/** No worker, connected or not, advertises the model for this task. */
 export class ModelNotServed extends Schema.TaggedError<ModelNotServed>()(
 	"ModelNotServed",
 	{ model: Schema.String, task: Schema.String },
 ) {
 	get message(): string {
-		return `No connected worker serves model "${this.model}" for task "${this.task}"`;
+		return `No worker serves model "${this.model}" for task "${this.task}"`;
+	}
+}
+
+/** Workers that serve the model for this task exist, but none is connected
+ *  and advertising it right now. */
+export class ModelOffline extends Schema.TaggedError<ModelOffline>()("ModelOffline", {
+	model: Schema.String,
+	task: Schema.String,
+}) {
+	get message(): string {
+		return `No worker serving model "${this.model}" for task "${this.task}" is online`;
 	}
 }
 
@@ -82,7 +94,7 @@ export class WorkersBusy extends Schema.TaggedError<WorkersBusy>()("WorkersBusy"
 }
 
 /** Why a job couldn't be given to a worker. */
-export type NoWorkerAvailable = ModelNotServed | WorkersBusy;
+export type NoWorkerAvailable = ModelNotServed | ModelOffline | WorkersBusy;
 
 export class JobFailed extends Schema.TaggedError<JobFailed>()("JobFailed", {
 	message: Schema.String,
@@ -111,12 +123,12 @@ export class Dispatcher extends Context.Service<
 			request: JobRequest,
 		): Effect.Effect<
 			{ jobId: string; events: Stream.Stream<JobEvent, JobFailed> },
-			NoWorkerAvailable
+			NoWorkerAvailable | DatabaseError
 		>;
 		/** Dispatch a job and wait for its whole result. */
 		collect(request: JobRequest): Effect.Effect<
 			{ jobId: string; result: JobResult },
-			NoWorkerAvailable | JobFailed
+			NoWorkerAvailable | DatabaseError | JobFailed
 		>;
 		/** Apply a job message from the worker connected as `workerId`. Messages
 		 *  about jobs dispatched to another worker are ignored. */
@@ -158,8 +170,16 @@ export class Dispatcher extends Context.Service<
 				);
 				const unavailable = { model: request.model, task: request.task };
 				switch (reservation._tag) {
-					case "NotServed":
-						return yield* new ModelNotServed(unavailable);
+					case "NotServed": {
+						const offline = yield* registry.hasServed(
+							request.organizationId,
+							request.model,
+							request.task,
+						);
+						return yield* offline
+							? new ModelOffline(unavailable)
+							: new ModelNotServed(unavailable);
+					}
 					case "Busy":
 						return yield* new WorkersBusy(unavailable);
 				}

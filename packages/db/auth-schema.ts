@@ -2,6 +2,7 @@ import {
   boolean,
   index,
   integer,
+  jsonb,
   pgTable,
   text,
   timestamp,
@@ -202,6 +203,9 @@ export const worker = pgTable(
     lastSeenAt: timestamp("last_seen_at", { mode: "date", precision: 3 })
       .defaultNow()
       .notNull(),
+    /** The models the worker last advertised, kept while it's offline so a
+     *  request for one can be told apart from a model nothing serves. */
+    models: jsonb("models").$type<ReadonlyArray<unknown>>().default([]).notNull(),
   },
   (table) => [
     index("worker_organizationId_idx").on(table.organizationId),

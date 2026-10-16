@@ -4,7 +4,7 @@ import { Auth, type Principal } from "../auth";
 
 /** Names a failure clients may handle differently, such as retrying when
  *  workers are busy but not when no worker serves the model. */
-export type ErrorCode = "model_not_found" | "workers_busy";
+export type ErrorCode = "model_not_found" | "model_offline" | "workers_busy";
 
 /** How an API dialect renders an error body. */
 export type ErrorBody = (message: string, status: number, code?: ErrorCode) => unknown;
@@ -16,6 +16,7 @@ export const openAIError: ErrorBody = (message, status, code) => ({
 /** Anthropic has no `code` field; its error `type` carries the distinction. */
 const anthropicErrorType: Record<ErrorCode, string> = {
 	model_not_found: "not_found_error",
+	model_offline: "api_error",
 	workers_busy: "overloaded_error",
 };
 
@@ -81,8 +82,8 @@ export const decodeBody = <S extends Schema.ConstraintDecoder<unknown>>(schema: 
 	});
 
 /** Render failures of an inference handler: API errors with their status, a
- *  model no connected worker serves as 404, busy workers as 503, anything
- *  else (a failed job) as 500. */
+ *  model no worker serves as 404, a model only offline workers serve as 502,
+ *  busy workers as 503, anything else (a failed job) as 500. */
 export const renderFailures =
 	(errorBody: ErrorBody) =>
 	<R>(
@@ -111,6 +112,8 @@ function httpFailure(err: { readonly _tag: string }): { status: number; code?: E
 	switch (err._tag) {
 		case "ModelNotServed":
 			return { status: 404, code: "model_not_found" };
+		case "ModelOffline":
+			return { status: 502, code: "model_offline" };
 		case "WorkersBusy":
 			return { status: 503, code: "workers_busy" };
 		default:
