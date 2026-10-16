@@ -7,6 +7,7 @@ import { usagePruning } from "./background";
 import { ShoalConfig } from "./config";
 import { Dispatcher } from "./dispatch";
 import { Email } from "./email";
+import { activityStreamRoutes } from "./http/activity";
 import { authRoutes } from "./http/auth-routes";
 import { dashboardRoutes } from "./http/dashboard";
 import { dashboardAppRoutes } from "./http/static";
@@ -33,6 +34,7 @@ const Routes = Layer.mergeAll(
 	anthropicRoutes,
 	workerGatewayRoutes,
 	workerStreamRoutes,
+	activityStreamRoutes,
 	dashboardAppRoutes,
 );
 

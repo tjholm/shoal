@@ -110,6 +110,20 @@ interface Job {
 	readonly model: string;
 	readonly startedAt: number;
 	readonly events: Queue.Queue<JobEvent, JobFailed | Cause.Done>;
+	/** Deltas received so far: a live estimate of output tokens. */
+	outputChunks: number;
+}
+
+/** A snapshot of a job that's running, or finished with its usage still
+ *  being written. */
+export interface RunningJob {
+	readonly jobId: string;
+	readonly workerId: string;
+	readonly model: string;
+	readonly startedAt: number;
+	readonly outputChunks: number;
+	/** The job's exact output tokens once it has finished; null while running. */
+	readonly completionTokens: number | null;
 }
 
 /** Routes inference jobs to workers and relays their results back. */
@@ -135,6 +149,8 @@ export class Dispatcher extends Context.Service<
 		receive(workerId: string, message: JobEvent | WorkerMessage): Effect.Effect<void>;
 		/** Fail every job running on a worker that has gone away. */
 		abandonWorker(workerId: string): Effect.Effect<void>;
+		/** The org's jobs that are running now, oldest first. */
+		running(organizationId: string): Effect.Effect<ReadonlyArray<RunningJob>>;
 	}
 >()("@shoal/api/Dispatcher") {
 	static readonly layer = Layer.effect(
@@ -145,6 +161,10 @@ export class Dispatcher extends Context.Service<
 			const scope = yield* Effect.scope;
 			const crypto = yield* Crypto.Crypto;
 			const jobs = new Map<string, Job>();
+			// Finished jobs whose usage is being written. They stay visible to
+			// `running` until it lands, so a client that sees a job go can rely
+			// on the usage totals including it.
+			const recording = new Map<string, { organizationId: string; job: RunningJob }>();
 
 			const cancel = (jobId: string) =>
 				Effect.gen(function* () {
@@ -194,6 +214,7 @@ export class Dispatcher extends Context.Service<
 					model: request.model,
 					startedAt: yield* Clock.currentTimeMillis,
 					events,
+					outputChunks: 0,
 				});
 				yield* worker.connection.send({
 					type: "infer",
@@ -227,12 +248,20 @@ export class Dispatcher extends Context.Service<
 				return { jobId, result: yield* resultOf(events) };
 			});
 
-			const recordUsage = (job: Job, done: Extract<JobEvent, { type: "done" }>) =>
+			const recordUsage = (
+				jobId: string,
+				job: Job,
+				done: Extract<JobEvent, { type: "done" }>,
+			) =>
 				Effect.gen(function* () {
 					// Only chat backends report usage, and a zero row would skew
 					// rollups, so record nothing without it.
 					if (job.task !== "chat" || !done.usage) return;
 					const now = yield* Clock.currentTimeMillis;
+					recording.set(jobId, {
+						organizationId: job.organizationId,
+						job: { ...runningJob(jobId, job), completionTokens: done.usage.completionTokens },
+					});
 					yield* usage
 						.record({
 							organizationId: job.organizationId,
@@ -251,6 +280,7 @@ export class Dispatcher extends Context.Service<
 							Effect.catch((err) =>
 								Effect.logError("failed to write usage_event", err),
 							),
+							Effect.ensuring(Effect.sync(() => recording.delete(jobId))),
 							Effect.forkIn(scope),
 						);
 				});
@@ -262,6 +292,9 @@ export class Dispatcher extends Context.Service<
 					if (!job || job.workerId !== workerId) return;
 					switch (message.type) {
 						case "delta":
+							job.outputChunks++;
+							yield* Queue.offer(job.events, message);
+							return;
 						case "embedding":
 						case "image":
 						case "audio":
@@ -272,7 +305,7 @@ export class Dispatcher extends Context.Service<
 							yield* Queue.offer(job.events, message);
 							yield* Queue.end(job.events);
 							yield* registry.release(workerId, "completed");
-							yield* recordUsage(job, message);
+							yield* recordUsage(message.jobId, job, message);
 							return;
 						case "error":
 							jobs.delete(message.jobId);
@@ -292,9 +325,30 @@ export class Dispatcher extends Context.Service<
 					{ discard: true },
 				);
 
-			return Dispatcher.of({ dispatch, collect, receive, abandonWorker });
+			const running = (organizationId: string) =>
+				Effect.sync((): ReadonlyArray<RunningJob> => [
+					...[...jobs]
+						.filter(([, job]) => job.organizationId === organizationId)
+						.map(([jobId, job]) => runningJob(jobId, job)),
+					...[...recording.values()]
+						.filter((entry) => entry.organizationId === organizationId)
+						.map((entry) => entry.job),
+				]);
+
+			return Dispatcher.of({ dispatch, collect, receive, abandonWorker, running });
 		}),
 	);
+}
+
+function runningJob(jobId: string, job: Job): RunningJob {
+	return {
+		jobId,
+		workerId: job.workerId,
+		model: job.model,
+		startedAt: job.startedAt,
+		outputChunks: job.outputChunks,
+		completionTokens: null,
+	};
 }
 
 /** Run a job's events to completion and reassemble its result. */

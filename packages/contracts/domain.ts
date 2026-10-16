@@ -121,6 +121,33 @@ export const InvitationPublicInfo = Schema.Struct({
 });
 export type InvitationPublicInfo = typeof InvitationPublicInfo.Type;
 
+/** A job running on a worker right now. */
+export const ActiveJob = Schema.Struct({
+	jobId: Schema.String,
+	workerId: Schema.String,
+	model: Schema.String,
+	/** Server epoch milliseconds the job was dispatched. */
+	startedAt: Schema.Number,
+	/** Output chunks the worker has streamed so far: an estimate of tokens,
+	 *  about one each for chat. */
+	outputChunks: Schema.Number,
+	/** Exact output tokens once the job has finished and its usage is being
+	 *  recorded; null while it runs. The job leaves the feed once the usage
+	 *  totals include it. */
+	completionTokens: Schema.NullOr(Schema.Number),
+});
+export type ActiveJob = typeof ActiveJob.Type;
+
+/** Events on the `/api/activity/stream` SSE feed: the org's running jobs,
+ *  sent whenever they change. */
+export const ActivityEvent = Schema.Struct({
+	type: Schema.tag("activity"),
+	jobs: Schema.Array(ActiveJob),
+	/** Server epoch milliseconds when sent, to read `startedAt` against. */
+	serverTime: Schema.Number,
+});
+export type ActivityEvent = typeof ActivityEvent.Type;
+
 /** Events on the `/api/workers/stream` SSE feed. The SSE event name is the
  *  `type` field; `data` is the JSON payload. */
 export const WorkerStreamEvent = Schema.Union([

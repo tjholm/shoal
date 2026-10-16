@@ -1,8 +1,8 @@
 import type { WorkerInfo, WorkerStreamEvent } from "@shoal/contracts";
 import { Clock, Effect, Layer, Option, Stream } from "effect";
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
+import { HttpRouter } from "effect/http";
 import { Auth } from "../auth";
-import { formatEvent, sseResponse } from "../http/sse";
+import { orgEventStream } from "../http/org-events";
 import { Usage } from "../usage";
 import { type WorkerChange, WorkerRegistry } from "./registry";
 import { liveFields, snapshotWorkers } from "./views";
@@ -89,25 +89,6 @@ export const workerStreamRoutes = Layer.effectDiscard(
 				}),
 			).pipe(Stream.provideContext(context));
 
-		yield* router.add(
-			"GET",
-			"/api/workers/stream",
-			Effect.gen(function* () {
-				const request = yield* HttpServerRequest.HttpServerRequest;
-				const session = yield* auth.getSession(new Headers(request.headers));
-				if (Option.isNone(session)) {
-					return HttpServerResponse.text("unauthorized", { status: 401 });
-				}
-				const organizationId = session.value.activeOrganizationId;
-				if (organizationId === null) {
-					return HttpServerResponse.text("no active organization", { status: 400 });
-				}
-				return sseResponse(
-					events(organizationId).pipe(
-						Stream.map((event) => formatEvent({ event: event.type, data: event })),
-					),
-				);
-			}),
-		);
+		yield* router.add("GET", "/api/workers/stream", orgEventStream(auth, events));
 	}),
 );
