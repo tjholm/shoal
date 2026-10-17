@@ -15,6 +15,7 @@ import { Route as AuthedRouteImport } from './routes/_authed'
 import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
 import { Route as AcceptInvitationInvitationIdRouteImport } from './routes/accept-invitation.$invitationId'
 import { Route as AuthedWorkersRouteImport } from './routes/_authed/workers'
+import { Route as AuthedModelsRouteImport } from './routes/_authed/models'
 import { Route as AuthedMembersRouteImport } from './routes/_authed/members'
 import { Route as AuthedApiKeysRouteImport } from './routes/_authed/api-keys'
 import { Route as AuthedWorkersWorkerIdRouteImport } from './routes/_authed/workers_.$workerId'
@@ -49,6 +50,11 @@ const AuthedWorkersRoute = AuthedWorkersRouteImport.update({
   path: '/workers',
   getParentRoute: () => AuthedRoute,
 } as any)
+const AuthedModelsRoute = AuthedModelsRouteImport.update({
+  id: '/models',
+  path: '/models',
+  getParentRoute: () => AuthedRoute,
+} as any)
 const AuthedMembersRoute = AuthedMembersRouteImport.update({
   id: '/members',
   path: '/members',
@@ -71,6 +77,7 @@ export interface FileRoutesByFullPath {
   '/sign-up': typeof SignUpRoute
   '/api-keys': typeof AuthedApiKeysRoute
   '/members': typeof AuthedMembersRoute
+  '/models': typeof AuthedModelsRoute
   '/workers': typeof AuthedWorkersRoute
   '/accept-invitation/$invitationId': typeof AcceptInvitationInvitationIdRoute
   '/workers/$workerId': typeof AuthedWorkersWorkerIdRoute
@@ -80,6 +87,7 @@ export interface FileRoutesByTo {
   '/sign-up': typeof SignUpRoute
   '/api-keys': typeof AuthedApiKeysRoute
   '/members': typeof AuthedMembersRoute
+  '/models': typeof AuthedModelsRoute
   '/workers': typeof AuthedWorkersRoute
   '/accept-invitation/$invitationId': typeof AcceptInvitationInvitationIdRoute
   '/': typeof AuthedIndexRoute
@@ -92,6 +100,7 @@ export interface FileRoutesById {
   '/sign-up': typeof SignUpRoute
   '/_authed/api-keys': typeof AuthedApiKeysRoute
   '/_authed/members': typeof AuthedMembersRoute
+  '/_authed/models': typeof AuthedModelsRoute
   '/_authed/workers': typeof AuthedWorkersRoute
   '/accept-invitation/$invitationId': typeof AcceptInvitationInvitationIdRoute
   '/_authed/': typeof AuthedIndexRoute
@@ -105,6 +114,7 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/api-keys'
     | '/members'
+    | '/models'
     | '/workers'
     | '/accept-invitation/$invitationId'
     | '/workers/$workerId'
@@ -114,6 +124,7 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/api-keys'
     | '/members'
+    | '/models'
     | '/workers'
     | '/accept-invitation/$invitationId'
     | '/'
@@ -125,6 +136,7 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/_authed/api-keys'
     | '/_authed/members'
+    | '/_authed/models'
     | '/_authed/workers'
     | '/accept-invitation/$invitationId'
     | '/_authed/'
@@ -182,6 +194,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedWorkersRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/models': {
+      id: '/_authed/models'
+      path: '/models'
+      fullPath: '/models'
+      preLoaderRoute: typeof AuthedModelsRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/members': {
       id: '/_authed/members'
       path: '/members'
@@ -209,6 +228,7 @@ declare module '@tanstack/react-router' {
 interface AuthedRouteChildren {
   AuthedApiKeysRoute: typeof AuthedApiKeysRoute
   AuthedMembersRoute: typeof AuthedMembersRoute
+  AuthedModelsRoute: typeof AuthedModelsRoute
   AuthedWorkersRoute: typeof AuthedWorkersRoute
   AuthedIndexRoute: typeof AuthedIndexRoute
   AuthedWorkersWorkerIdRoute: typeof AuthedWorkersWorkerIdRoute
@@ -217,6 +237,7 @@ interface AuthedRouteChildren {
 const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedApiKeysRoute: AuthedApiKeysRoute,
   AuthedMembersRoute: AuthedMembersRoute,
+  AuthedModelsRoute: AuthedModelsRoute,
   AuthedWorkersRoute: AuthedWorkersRoute,
   AuthedIndexRoute: AuthedIndexRoute,
   AuthedWorkersWorkerIdRoute: AuthedWorkersWorkerIdRoute,

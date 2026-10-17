@@ -8,6 +8,7 @@ import {
 } from "effect/http-api";
 import {
 	InvitationPublicInfo,
+	ModelStatsReport,
 	ModelUsage,
 	ServerConfig,
 	UsageBucket,
@@ -106,6 +107,10 @@ export class UsageGroup extends HttpApiGroup.make("usage")
 		HttpApiEndpoint.get("byModel", "/models", {
 			query: { range: Schema.optional(UsageRange) },
 			success: Schema.Array(ModelUsage),
+		}),
+		HttpApiEndpoint.get("modelStats", "/models/stats", {
+			query: { range: UsageRange },
+			success: ModelStatsReport,
 		}),
 		HttpApiEndpoint.get("recentEvents", "/events", {
 			query: { limit: Limit },

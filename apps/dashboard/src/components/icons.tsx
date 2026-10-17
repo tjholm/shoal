@@ -36,6 +36,13 @@ export const OverviewIcon = () => (
 	</Icon>
 );
 
+export const ModelsIcon = () => (
+	<Icon>
+		<path d="M10 2.5 16.5 6v8L10 17.5 3.5 14V6z" />
+		<path d="M3.5 6 10 9.5 16.5 6M10 9.5v8" />
+	</Icon>
+);
+
 export const MembersIcon = () => (
 	<Icon>
 		<circle cx="8" cy="7" r="3" />

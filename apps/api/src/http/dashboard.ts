@@ -258,6 +258,11 @@ const UsageHandlers = HttpApiBuilder.group(
 					Effect.orDie,
 				),
 			)
+			.handle("modelStats", ({ query }) =>
+				inOrg((organizationId) => usage.modelStats(organizationId, query.range)).pipe(
+					Effect.orDie,
+				),
+			)
 			.handle("workerSeries", ({ query }) =>
 				inOrg((organizationId) =>
 					usage.workerSeries(organizationId, Math.min(query.days ?? 14, 90)),

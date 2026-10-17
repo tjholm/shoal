@@ -17,6 +17,7 @@ import {
 	workerStatus,
 } from "../../components/StatusBadge";
 import { Button } from "../../components/ui/button";
+import { formatNumber } from "../../lib/format";
 import {
 	serverConfigQuery,
 	workerDetailQuery,
@@ -456,10 +457,3 @@ function formatDuration(ms: number): string {
 	return `${day}d ${hr % 24}h`;
 }
 
-function formatNumber(n: number): string {
-	if (n < 1000) return String(n);
-	if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k`;
-	if (n < 1_000_000_000)
-		return `${(n / 1_000_000).toFixed(n < 10_000_000 ? 1 : 0)}M`;
-	return `${(n / 1_000_000_000).toFixed(1)}B`;
-}

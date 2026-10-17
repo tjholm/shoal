@@ -26,6 +26,7 @@ import {
 	DialogTrigger,
 } from "../../components/ui/dialog";
 import { useCollections } from "../../lib/collections";
+import { formatNumber, workerLabel } from "../../lib/format";
 import { serverConfigQuery, workerSeriesQuery } from "../../lib/queries";
 
 const SERIES_DAYS = 14;
@@ -115,10 +116,6 @@ function Fleet({ workers }: { workers: ReadonlyArray<WorkerInfo> }) {
 	);
 }
 
-function workerName(worker: WorkerInfo): string {
-	return worker.name?.trim() || worker.workerId.slice(0, 8);
-}
-
 function WorkerCard({
 	worker,
 	series,
@@ -155,7 +152,7 @@ function WorkerCard({
 				<span className="flex min-w-0 flex-[1_1_220px] flex-col gap-[5px]">
 					<span className="flex items-center gap-2">
 						<span className="truncate font-mono text-[15px] font-medium text-foam">
-							{workerName(worker)}
+							{workerLabel(worker.workerId, worker.name)}
 						</span>
 						<span
 							className={`inline-flex h-5 shrink-0 items-center rounded-xs border px-1.5 font-mono text-[11px] ${badge}`}
@@ -395,7 +392,7 @@ function DeleteWorkerDialog({ worker }: { worker: WorkerInfo }) {
 			</DialogTrigger>
 			<DialogContent>
 				<DialogHeader>
-					<DialogTitle>Delete worker "{workerName(worker)}"?</DialogTitle>
+					<DialogTitle>Delete worker "{workerLabel(worker.workerId, worker.name)}"?</DialogTitle>
 					<DialogDescription>
 						{worker.online
 							? "This worker is online. Deleting it disconnects the session and permanently removes its usage history for this organization."
@@ -446,12 +443,6 @@ function FirstFish({ serverWsUrl }: { serverWsUrl: string }) {
 			</div>
 		</main>
 	);
-}
-
-function formatNumber(n: number): string {
-	if (n < 1000) return String(n);
-	if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}K`;
-	return `${(n / 1_000_000).toFixed(2)}M`;
 }
 
 function formatDuration(ms: number): string {
