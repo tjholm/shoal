@@ -1,4 +1,5 @@
 import { createFileRoute, Link, Outlet, redirect } from "@tanstack/react-router";
+import { useEffect } from "react";
 import { AppSidebar } from "../components/AppSidebar";
 import { ConnectAppDialog } from "../components/ConnectAppDialog";
 import { ConnectWorkerDialog } from "../components/ConnectWorkerDialog";
@@ -7,6 +8,7 @@ import { MobileNav } from "../components/MobileNav";
 import { OrgSwitcher } from "../components/OrgSwitcher";
 import { ShoalWordmark } from "../components/ShoalMark";
 import { UserMenu } from "../components/UserMenu";
+import { collectionsFor, evictCollectionsExcept } from "../lib/collections";
 import { useCanCreateKeys } from "../lib/permissions";
 import { authContextQuery } from "../lib/queries";
 
@@ -20,7 +22,10 @@ export const Route = createFileRoute("/_authed")({
 	beforeLoad: async ({ context: { queryClient } }) => {
 		const ctx = await queryClient.ensureQueryData(authContextQuery());
 		if (!ctx) throw redirect({ to: "/sign-in" });
-		return { auth: ctx };
+		return {
+			auth: ctx,
+			collections: collectionsFor(`${ctx.user.id}/${ctx.activeOrg?.id ?? ""}`),
+		};
 	},
 	loader: ({ context }) => context.auth,
 	component: AuthedLayout,
@@ -28,6 +33,10 @@ export const Route = createFileRoute("/_authed")({
 
 function AuthedLayout() {
 	const { user, orgs, activeOrg } = Route.useLoaderData();
+	const { collections } = Route.useRouteContext();
+	// After a switch has rendered, nothing reads the previous session's
+	// collections, so their streams can close.
+	useEffect(() => evictCollectionsExcept(collections), [collections]);
 	const canCreateKeys = useCanCreateKeys();
 
 	return (

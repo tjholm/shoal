@@ -25,7 +25,7 @@ import {
 	DialogTitle,
 	DialogTrigger,
 } from "../../components/ui/dialog";
-import { workersCollection } from "../../lib/collections";
+import { useCollections } from "../../lib/collections";
 import { serverConfigQuery, workerSeriesQuery } from "../../lib/queries";
 
 const SERIES_DAYS = 14;
@@ -40,10 +40,13 @@ type Filter = "all" | "online" | "offline";
 
 function Workers() {
 	const { data: config } = useSuspenseQuery(serverConfigQuery());
-	const { data: liveWorkers, isReady } = useLiveQuery((q) =>
-		q
-			.from({ worker: workersCollection })
-			.orderBy(({ worker }) => worker.lastSeenAt, "desc"),
+	const { workers: workersCollection } = useCollections();
+	const { data: liveWorkers, isReady } = useLiveQuery(
+		(q) =>
+			q
+				.from({ worker: workersCollection })
+				.orderBy(({ worker }) => worker.lastSeenAt, "desc"),
+		[workersCollection],
 	);
 	const workers = liveWorkers ?? [];
 
@@ -246,6 +249,7 @@ const MODEL_COLUMNS = "minmax(0,2.2fr) 110px 140px 96px";
 function WorkerDetails({ worker }: { worker: WorkerInfo }) {
 	const [renaming, setRenaming] = useState(false);
 	const [draft, setDraft] = useState(worker.name ?? "");
+	const { workers: workersCollection } = useCollections();
 
 	const rename = () => {
 		const next = draft.trim() || null;
@@ -370,6 +374,7 @@ function ModelLine({ model, hot }: { model: WorkerModel; hot: boolean }) {
 function DeleteWorkerDialog({ worker }: { worker: WorkerInfo }) {
 	const [open, setOpen] = useState(false);
 	const [submitting, setSubmitting] = useState(false);
+	const { workers: workersCollection } = useCollections();
 
 	const handleDelete = async () => {
 		setSubmitting(true);

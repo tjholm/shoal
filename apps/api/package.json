@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "bun --watch src/main.ts",
-    "start": "bun src/main.ts"
+    "start": "bun src/main.ts",
+    "test": "bun test"
   },
   "dependencies": {
     "@better-auth/api-key": "^1.7.7",

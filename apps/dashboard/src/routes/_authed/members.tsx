@@ -12,7 +12,7 @@ import {
 	DropdownMenuTrigger,
 } from "../../components/ui/dropdown-menu";
 import { authClient, unwrap } from "../../lib/auth-client";
-import { workersCollection } from "../../lib/collections";
+import { useCollections } from "../../lib/collections";
 import { authContextQuery, invitationsQuery, membersQuery } from "../../lib/queries";
 
 export const Route = createFileRoute("/_authed/members")({
@@ -30,7 +30,10 @@ function Members() {
 	const { data: members } = useSuspenseQuery(membersQuery());
 	const { data: invitations } = useSuspenseQuery(invitationsQuery());
 	const { data: auth } = useQuery(authContextQuery());
-	const { data: workers } = useLiveQuery((q) => q.from({ worker: workersCollection }));
+	const { workers: workersCollection } = useCollections();
+	const { data: workers } = useLiveQuery((q) => q.from({ worker: workersCollection }), [
+		workersCollection,
+	]);
 	const queryClient = useQueryClient();
 	const refresh = () => {
 		queryClient.invalidateQueries({ queryKey: membersQuery().queryKey });

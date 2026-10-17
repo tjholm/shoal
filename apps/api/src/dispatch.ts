@@ -13,11 +13,15 @@ import {
 	Clock,
 	Context,
 	Crypto,
+	Duration,
 	Effect,
 	Layer,
 	Option,
+	PubSub,
 	Queue,
+	Schedule,
 	Schema,
+	type Scope,
 	Stream,
 } from "effect";
 import { Usage } from "./usage";
@@ -126,6 +130,16 @@ export interface RunningJob {
 	readonly completionTokens: number | null;
 }
 
+/** A change to an org's running jobs. A job is `deleted` once it has failed,
+ *  been cancelled, or finished with its usage recorded. */
+export type JobChange =
+	| { readonly type: "upsert"; readonly job: RunningJob }
+	| { readonly type: "deleted"; readonly jobId: string };
+
+/** How often a streaming job's output count is published. Deltas arrive per
+ *  token, far faster than a dashboard needs to redraw. */
+const PROGRESS_INTERVAL = Duration.millis(250);
+
 /** Routes inference jobs to workers and relays their results back. */
 export class Dispatcher extends Context.Service<
 	Dispatcher,
@@ -151,6 +165,11 @@ export class Dispatcher extends Context.Service<
 		abandonWorker(workerId: string): Effect.Effect<void>;
 		/** The org's jobs that are running now, oldest first. */
 		running(organizationId: string): Effect.Effect<ReadonlyArray<RunningJob>>;
+		/** Subscribe to changes to the org's running jobs. The stream carries
+		 *  every change from the moment this effect runs until its scope closes. */
+		subscribe(
+			organizationId: string,
+		): Effect.Effect<Stream.Stream<JobChange>, never, Scope.Scope>;
 	}
 >()("@shoal/api/Dispatcher") {
 	static readonly layer = Layer.effect(
@@ -165,12 +184,40 @@ export class Dispatcher extends Context.Service<
 			// `running` until it lands, so a client that sees a job go can rely
 			// on the usage totals including it.
 			const recording = new Map<string, { organizationId: string; job: RunningJob }>();
+			const bus = yield* PubSub.unbounded<{ organizationId: string; change: JobChange }>();
+			// Jobs that have streamed output since their count was last published.
+			const progressed = new Set<string>();
+
+			const emit = (organizationId: string, change: JobChange) =>
+				PubSub.publish(bus, { organizationId, change }).pipe(Effect.asVoid);
+
+			/** Forget a job that won't finish, and tell subscribers it's gone. */
+			const drop = (jobId: string, job: Job) => {
+				jobs.delete(jobId);
+				progressed.delete(jobId);
+				return emit(job.organizationId, { type: "deleted", jobId });
+			};
+
+			yield* Effect.suspend(() => {
+				const due = [...progressed];
+				progressed.clear();
+				return Effect.forEach(
+					due,
+					(jobId) => {
+						const job = jobs.get(jobId);
+						return job
+							? emit(job.organizationId, { type: "upsert", job: runningJob(jobId, job) })
+							: Effect.void;
+					},
+					{ discard: true },
+				);
+			}).pipe(Effect.repeat(Schedule.spaced(PROGRESS_INTERVAL)), Effect.forkIn(scope));
 
 			const cancel = (jobId: string) =>
 				Effect.gen(function* () {
 					const job = jobs.get(jobId);
 					if (!job) return;
-					jobs.delete(jobId);
+					yield* drop(jobId, job);
 					const worker = yield* registry.get(job.workerId);
 					if (Option.isSome(worker)) {
 						// Without this the worker would run the job to completion for a
@@ -206,7 +253,7 @@ export class Dispatcher extends Context.Service<
 				const worker = reservation.worker;
 				const jobId = yield* newId(crypto);
 				const events = yield* Queue.unbounded<JobEvent, JobFailed | Cause.Done>();
-				jobs.set(jobId, {
+				const job: Job = {
 					workerId: worker.workerId,
 					organizationId: request.organizationId,
 					keyId: worker.keyId,
@@ -215,7 +262,9 @@ export class Dispatcher extends Context.Service<
 					startedAt: yield* Clock.currentTimeMillis,
 					events,
 					outputChunks: 0,
-				});
+				};
+				jobs.set(jobId, job);
+				yield* emit(job.organizationId, { type: "upsert", job: runningJob(jobId, job) });
 				yield* worker.connection.send({
 					type: "infer",
 					jobId,
@@ -251,17 +300,11 @@ export class Dispatcher extends Context.Service<
 			const recordUsage = (
 				jobId: string,
 				job: Job,
-				done: Extract<JobEvent, { type: "done" }>,
+				tokens: TokenUsage,
+				finishReason: FinishReason,
 			) =>
 				Effect.gen(function* () {
-					// Only chat backends report usage, and a zero row would skew
-					// rollups, so record nothing without it.
-					if (job.task !== "chat" || !done.usage) return;
 					const now = yield* Clock.currentTimeMillis;
-					recording.set(jobId, {
-						organizationId: job.organizationId,
-						job: { ...runningJob(jobId, job), completionTokens: done.usage.completionTokens },
-					});
 					yield* usage
 						.record({
 							organizationId: job.organizationId,
@@ -269,9 +312,9 @@ export class Dispatcher extends Context.Service<
 							keyId: job.keyId,
 							model: job.model,
 							task: job.task,
-							promptTokens: done.usage.promptTokens,
-							completionTokens: done.usage.completionTokens,
-							finishReason: done.finishReason,
+							promptTokens: tokens.promptTokens,
+							completionTokens: tokens.completionTokens,
+							finishReason,
 							durationMs: now - job.startedAt,
 						})
 						.pipe(
@@ -280,10 +323,31 @@ export class Dispatcher extends Context.Service<
 							Effect.catch((err) =>
 								Effect.logError("failed to write usage_event", err),
 							),
-							Effect.ensuring(Effect.sync(() => recording.delete(jobId))),
+							Effect.ensuring(
+								Effect.suspend(() => {
+									recording.delete(jobId);
+									return emit(job.organizationId, { type: "deleted", jobId });
+								}),
+							),
 							Effect.forkIn(scope),
 						);
 				});
+
+			/** Move a finished job from `jobs` to `recording` in one synchronous
+			 *  step, so `running` never misses it, then record its usage. */
+			const finish = (jobId: string, job: Job, done: Extract<JobEvent, { type: "done" }>) => {
+				jobs.delete(jobId);
+				progressed.delete(jobId);
+				// Only chat backends report usage, and a zero row would skew
+				// rollups, so record nothing without it.
+				const tokens = job.task === "chat" ? done.usage : undefined;
+				if (!tokens) return emit(job.organizationId, { type: "deleted", jobId });
+				const finished = { ...runningJob(jobId, job), completionTokens: tokens.completionTokens };
+				recording.set(jobId, { organizationId: job.organizationId, job: finished });
+				return emit(job.organizationId, { type: "upsert", job: finished }).pipe(
+					Effect.andThen(recordUsage(jobId, job, tokens, done.finishReason)),
+				);
+			};
 
 			const receive = (workerId: string, message: JobEvent | WorkerMessage) =>
 				Effect.gen(function* () {
@@ -293,6 +357,7 @@ export class Dispatcher extends Context.Service<
 					switch (message.type) {
 						case "delta":
 							job.outputChunks++;
+							progressed.add(message.jobId);
 							yield* Queue.offer(job.events, message);
 							return;
 						case "embedding":
@@ -301,14 +366,13 @@ export class Dispatcher extends Context.Service<
 							yield* Queue.offer(job.events, message);
 							return;
 						case "done":
-							jobs.delete(message.jobId);
+							yield* finish(message.jobId, job, message);
 							yield* Queue.offer(job.events, message);
 							yield* Queue.end(job.events);
 							yield* registry.release(workerId, "completed");
-							yield* recordUsage(message.jobId, job, message);
 							return;
 						case "error":
-							jobs.delete(message.jobId);
+							yield* drop(message.jobId, job);
 							yield* Queue.fail(job.events, new JobFailed({ message: message.message }));
 							yield* registry.release(workerId, "abandoned");
 							return;
@@ -318,10 +382,12 @@ export class Dispatcher extends Context.Service<
 			const abandonWorker = (workerId: string) =>
 				Effect.forEach(
 					[...jobs].filter(([, job]) => job.workerId === workerId),
-					([jobId, job]) => {
-						jobs.delete(jobId);
-						return Queue.fail(job.events, new JobFailed({ message: "Worker disconnected" }));
-					},
+					([jobId, job]) =>
+						drop(jobId, job).pipe(
+							Effect.andThen(
+								Queue.fail(job.events, new JobFailed({ message: "Worker disconnected" })),
+							),
+						),
 					{ discard: true },
 				);
 
@@ -335,7 +401,17 @@ export class Dispatcher extends Context.Service<
 						.map((entry) => entry.job),
 				]);
 
-			return Dispatcher.of({ dispatch, collect, receive, abandonWorker, running });
+			const subscribe = (organizationId: string) =>
+				PubSub.subscribe(bus).pipe(
+					Effect.map((subscription) =>
+						Stream.fromSubscription(subscription).pipe(
+							Stream.filter((e) => e.organizationId === organizationId),
+							Stream.map((e) => e.change),
+						),
+					),
+				);
+
+			return Dispatcher.of({ dispatch, collect, receive, abandonWorker, running, subscribe });
 		}),
 	);
 }
