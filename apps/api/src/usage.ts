@@ -1,4 +1,6 @@
 import type {
+	ModelStatsReport,
+	RequestStats,
 	UsageTotals as WindowTotals,
 	UsageRange,
 	UsageSummary,
@@ -71,6 +73,9 @@ export class Usage extends Context.Service<
 		): Result<ReadonlyArray<WorkerUsageSeries>>;
 		/** Per-model rollup, most jobs first, optionally since a time. */
 		byModel(scope: UsageScope, since?: Date): Result<ReadonlyArray<ModelUsage>>;
+		/** Per-model and per-worker request stats over `range`, with requests
+		 *  per model over time. */
+		modelStats(organizationId: string, range: UsageRange): Result<ModelStatsReport>;
 		/** Most recent first. */
 		recentEvents(
 			scope: UsageScope,
@@ -95,6 +100,19 @@ export class Usage extends Context.Service<
 					...(scope.workerId !== undefined ? [eq(e.workerId, scope.workerId)] : []),
 					...rest,
 				);
+
+			// Percentiles ignore rows with no duration. Speed is end to end: output
+			// tokens over the whole request time.
+			const requestStats = {
+				jobs,
+				promptTokens,
+				completionTokens,
+				p50DurationMs: sql<number | null>`percentile_cont(0.5) WITHIN GROUP (ORDER BY ${e.durationMs})`,
+				p90DurationMs: sql<number | null>`percentile_cont(0.9) WITHIN GROUP (ORDER BY ${e.durationMs})`,
+				p50TokensPerSecond: sql<number | null>`percentile_cont(0.5) WITHIN GROUP (ORDER BY ${e.completionTokens} * 1000.0 / NULLIF(${e.durationMs}, 0)) FILTER (WHERE ${e.completionTokens} > 0)`,
+				truncated: sql<number>`COUNT(*) FILTER (WHERE ${e.finishReason} = 'length')`,
+				toolCalls: sql<number>`COUNT(*) FILTER (WHERE ${e.finishReason} = 'tool_calls')`,
+			};
 
 			const totals = (row: {
 				jobs: number;
@@ -278,6 +296,82 @@ export class Usage extends Context.Service<
 							}),
 						),
 
+				modelStats: (organizationId, range) =>
+					Effect.gen(function* () {
+						const window = summaryWindow(range, new Date());
+						const bucket = sql<string>`(EXTRACT(EPOCH FROM date_trunc(${sql.raw(`'${window.unit}'`)}, ${e.createdAt})) * 1000)::bigint`;
+						const scope = { organizationId };
+						const inWindow = inScope(scope, gte(e.createdAt, window.start));
+						const [models, workers, buckets] = yield* Effect.all(
+							[
+								database.query((db) =>
+									db
+										.select({ model: e.model, ...requestStats })
+										.from(e)
+										.where(inWindow)
+										.groupBy(e.model)
+										.orderBy(sql`COUNT(*) DESC`, e.model),
+								),
+								database.query((db) =>
+									db
+										.select({
+											model: e.model,
+											workerId: e.workerId,
+											workerName: schema.worker.name,
+											...requestStats,
+										})
+										.from(e)
+										.leftJoin(schema.worker, eq(e.workerId, schema.worker.id))
+										.where(inWindow)
+										.groupBy(e.model, e.workerId, schema.worker.name)
+										.orderBy(sql`COUNT(*) DESC`, e.workerId),
+								),
+								database.query((db) =>
+									db
+										.select({ start: bucket, model: e.model, jobs })
+										.from(e)
+										.where(inWindow)
+										.groupBy(bucket, e.model),
+								),
+							],
+							{ concurrency: "unbounded" },
+						);
+						const starts = Array.from(
+							{ length: window.count },
+							(_, i) => window.start.getTime() + i * window.stepMs,
+						);
+						const slot = new Map(starts.map((start, i) => [start, i]));
+						const series = new Map<string, Array<number>>();
+						for (const row of buckets) {
+							const i = slot.get(Number(row.start));
+							if (i === undefined) continue;
+							const counts = series.get(row.model) ?? starts.map(() => 0);
+							counts[i] = Number(row.jobs);
+							series.set(row.model, counts);
+						}
+						return {
+							range,
+							models: models.map((m) => ({
+								model: m.model,
+								...toRequestStats(m),
+								workers: workers
+									.filter((w) => w.model === m.model)
+									.map((w) => ({
+										workerId: w.workerId,
+										workerName: w.workerName,
+										...toRequestStats(w),
+									})),
+							})),
+							series: {
+								starts,
+								models: models.map((m) => ({
+									model: m.model,
+									jobs: series.get(m.model) ?? starts.map(() => 0),
+								})),
+							},
+						};
+					}),
+
 				recentEvents: (scope, limit) =>
 					database
 						.query((db) =>
@@ -318,6 +412,30 @@ const emptyWindow: WindowTotals = {
 	completionTokens: 0,
 	avgDurationMs: null,
 };
+
+/** Postgres returns counts and percentiles as strings; make them numbers. */
+function toRequestStats(row: {
+	jobs: number;
+	promptTokens: number;
+	completionTokens: number;
+	p50DurationMs: number | null;
+	p90DurationMs: number | null;
+	p50TokensPerSecond: number | null;
+	truncated: number;
+	toolCalls: number;
+}): RequestStats {
+	const orNull = (value: number | null) => (value != null ? Number(value) : null);
+	return {
+		jobs: Number(row.jobs),
+		promptTokens: Number(row.promptTokens),
+		completionTokens: Number(row.completionTokens),
+		p50DurationMs: orNull(row.p50DurationMs),
+		p90DurationMs: orNull(row.p90DurationMs),
+		p50TokensPerSecond: orNull(row.p50TokensPerSecond),
+		truncated: Number(row.truncated),
+		toolCalls: Number(row.toolCalls),
+	};
+}
 
 function windowTotals(row: {
 	jobs: number;

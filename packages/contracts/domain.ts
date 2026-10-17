@@ -85,6 +85,55 @@ export const UsageSummary = Schema.Struct({
 });
 export type UsageSummary = typeof UsageSummary.Type;
 
+/** Volume, speed and outcomes for a set of chat requests. */
+export const RequestStats = Schema.Struct({
+	jobs: Schema.Number,
+	promptTokens: Schema.Number,
+	completionTokens: Schema.Number,
+	/** Median and 90th-percentile request time. */
+	p50DurationMs: Schema.NullOr(Schema.Number),
+	p90DurationMs: Schema.NullOr(Schema.Number),
+	/** Median output tokens per second, end to end: over the whole request,
+	 *  including queueing, model load and reading the prompt. */
+	p50TokensPerSecond: Schema.NullOr(Schema.Number),
+	/** Requests that stopped at the output token limit. */
+	truncated: Schema.Number,
+	/** Requests that ended by calling tools. */
+	toolCalls: Schema.Number,
+});
+export type RequestStats = typeof RequestStats.Type;
+
+export const ModelWorkerStats = Schema.Struct({
+	workerId: Schema.String,
+	workerName: Schema.NullOr(Schema.String),
+	...RequestStats.fields,
+});
+export type ModelWorkerStats = typeof ModelWorkerStats.Type;
+
+export const ModelStats = Schema.Struct({
+	model: Schema.String,
+	...RequestStats.fields,
+	/** Most requests first. */
+	workers: Schema.Array(ModelWorkerStats),
+});
+export type ModelStats = typeof ModelStats.Type;
+
+/** Chat request stats per model and worker over a range. */
+export const ModelStatsReport = Schema.Struct({
+	range: UsageRange,
+	/** Most requests first. */
+	models: Schema.Array(ModelStats),
+	/** Requests per model over time, in the summary's hourly (24h) or daily
+	 *  buckets. `jobs[i]` belongs to `starts[i]`, in epoch milliseconds. */
+	series: Schema.Struct({
+		starts: Schema.Array(Schema.Number),
+		models: Schema.Array(
+			Schema.Struct({ model: Schema.String, jobs: Schema.Array(Schema.Number) }),
+		),
+	}),
+});
+export type ModelStatsReport = typeof ModelStatsReport.Type;
+
 /** One worker's daily usage, oldest first, zero-filled. */
 export const WorkerUsageSeries = Schema.Struct({
 	workerId: Schema.String,

@@ -1,5 +1,5 @@
 import type { UsageRange } from "@shoal/contracts";
-import { queryOptions } from "@tanstack/react-query";
+import { keepPreviousData, queryOptions } from "@tanstack/react-query";
 import { Effect } from "effect";
 import { api } from "./api";
 import {
@@ -78,6 +78,17 @@ export const usageSummaryQuery = (range: UsageRange) =>
 		queryKey: ["usage", "summary", range] as const,
 		queryFn: () => api((c) => c.usage.summary({ query: { range } })),
 		staleTime: 30_000,
+		// Keep the last range on screen while a new one loads.
+		placeholderData: keepPreviousData,
+	});
+
+/** Per-model and per-worker request stats for the Models page. */
+export const modelStatsQuery = (range: UsageRange) =>
+	queryOptions({
+		queryKey: ["usage", "modelStats", range] as const,
+		queryFn: () => api((c) => c.usage.modelStats({ query: { range } })),
+		staleTime: 30_000,
+		placeholderData: keepPreviousData,
 	});
 
 /** Each worker's daily usage, for sparklines on the Workers page. */

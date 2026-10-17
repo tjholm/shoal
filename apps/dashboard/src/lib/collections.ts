@@ -5,8 +5,10 @@ import {
 	WorkerStreamEvent,
 } from "@shoal/contracts";
 import { createCollection } from "@tanstack/react-db";
+import { useQueryClient } from "@tanstack/react-query";
 import { getRouteApi } from "@tanstack/react-router";
 import { Schema } from "effect";
+import { useEffect } from "react";
 import { api } from "./api";
 
 const decodeEvent = Schema.decodeUnknownSync(Schema.fromJsonString(WorkerStreamEvent));
@@ -164,3 +166,36 @@ const authedRoute = getRouteApi("/_authed");
 
 /** The active session's live collections, from the `_authed` route context. */
 export const useCollections = (): SessionCollections => authedRoute.useRouteContext().collections;
+
+/** At most one usage refetch per this long, however many jobs finish. */
+const USAGE_REFETCH_INTERVAL_MS = 5_000;
+
+/**
+ * Refetch usage queries when jobs leave the feed. The server deletes a
+ * finished job only once its usage is recorded, so the refetch includes it.
+ * The first refetch is immediate; more within the interval collapse into one
+ * at its end. A refetch in flight isn't cancelled, so under steady load slow
+ * usage queries still complete.
+ */
+export function useRefetchUsageWhenJobsLeave(activeJobs: SessionCollections["activeJobs"]) {
+	const queryClient = useQueryClient();
+	useEffect(() => {
+		let lastRefetch = 0;
+		let pending: ReturnType<typeof setTimeout> | undefined;
+		const refetch = () => {
+			lastRefetch = Date.now();
+			pending = undefined;
+			void queryClient.invalidateQueries({ queryKey: ["usage"] }, { cancelRefetch: false });
+		};
+		const subscription = activeJobs.subscribeChanges((changes) => {
+			if (pending !== undefined || !changes.some((change) => change.type === "delete")) return;
+			const wait = lastRefetch + USAGE_REFETCH_INTERVAL_MS - Date.now();
+			if (wait <= 0) refetch();
+			else pending = setTimeout(refetch, wait);
+		});
+		return () => {
+			subscription.unsubscribe();
+			clearTimeout(pending);
+		};
+	}, [activeJobs, queryClient]);
+}

@@ -9,7 +9,7 @@ import type {
 } from "@shoal/contracts";
 import type { ModelPurpose } from "@shoal/protocol";
 import { useLiveQuery } from "@tanstack/react-db";
-import { useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { FitNumber } from "@shoal/ui/components/FitNumber";
@@ -18,7 +18,13 @@ import { Fact, Page, Section, TableHead } from "@shoal/ui/components/Page";
 import { Segmented } from "@shoal/ui/components/Segmented";
 import { Sparkline } from "../../components/Sparkline";
 import { TextMorph } from "@shoal/ui/components/TextMorph";
-import { jobTokens, type SessionCollections, useCollections } from "../../lib/collections";
+import {
+	jobTokens,
+	type SessionCollections,
+	useCollections,
+	useRefetchUsageWhenJobsLeave,
+} from "../../lib/collections";
+import { formatCount, formatNumber } from "../../lib/format";
 import {
 	authContextQuery,
 	membersQuery,
@@ -430,20 +436,6 @@ function RunningRow({
 	);
 }
 
-/** Refetch usage whenever a job leaves the feed. The server deletes a finished
- *  job only once its usage is recorded, so the refetch includes it. */
-function useRefetchUsageWhenJobsLeave(activeJobs: SessionCollections["activeJobs"]) {
-	const queryClient = useQueryClient();
-	useEffect(() => {
-		const subscription = activeJobs.subscribeChanges((changes) => {
-			if (changes.some((change) => change.type === "delete")) {
-				void queryClient.invalidateQueries({ queryKey: ["usage"] });
-			}
-		});
-		return () => subscription.unsubscribe();
-	}, [activeJobs, queryClient]);
-}
-
 /** The current time, refreshed every `intervalMs`; frozen while null. */
 function useNow(intervalMs: number | null): number {
 	const [now, setNow] = useState(() => Date.now());
@@ -512,17 +504,6 @@ function RecentRequests({ rows }: { rows: ReadonlyArray<UsageEventRow> }) {
 
 function Empty({ children }: { children: React.ReactNode }) {
 	return <p className="px-[18px] py-10 text-center text-[13px] text-silt">{children}</p>;
-}
-
-function formatCount(n: number): string {
-	return n.toLocaleString("en-US");
-}
-
-function formatNumber(n: number): string {
-	if (n < 1000) return String(n);
-	if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}K`;
-	if (n < 1_000_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
-	return `${(n / 1_000_000_000).toFixed(1)}B`;
 }
 
 function formatAgo(epochMs: number): string {

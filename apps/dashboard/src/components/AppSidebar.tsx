@@ -3,12 +3,12 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useCollections } from "../lib/collections";
 import { membersQuery } from "../lib/queries";
-import { KeyIcon, MembersIcon, OverviewIcon } from "./icons";
+import { KeyIcon, MembersIcon, ModelsIcon, OverviewIcon } from "./icons";
 import { ShoalGlyph } from "@shoal/ui/components/ShoalMark";
 
 export interface NavItem {
 	title: string;
-	url: "/" | "/workers" | "/members" | "/api-keys";
+	url: "/" | "/workers" | "/models" | "/members" | "/api-keys";
 	icon: (props: { active: boolean }) => React.ReactNode;
 }
 
@@ -19,6 +19,7 @@ export const navItems: NavItem[] = [
 		url: "/workers",
 		icon: ({ active }) => <ShoalGlyph size={16} lit={active} />,
 	},
+	{ title: "Models", url: "/models", icon: () => <ModelsIcon /> },
 	{ title: "Members", url: "/members", icon: () => <MembersIcon /> },
 	{ title: "API keys", url: "/api-keys", icon: () => <KeyIcon /> },
 ];
