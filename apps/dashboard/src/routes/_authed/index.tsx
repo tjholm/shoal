@@ -9,7 +9,7 @@ import type {
 } from "@shoal/contracts";
 import type { ModelPurpose } from "@shoal/protocol";
 import { useLiveQuery } from "@tanstack/react-db";
-import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { FitNumber } from "../../components/FitNumber";
@@ -18,8 +18,7 @@ import { Fact, Page, Section, TableHead } from "../../components/Page";
 import { Segmented } from "../../components/Segmented";
 import { Sparkline } from "../../components/Sparkline";
 import { TextMorph } from "../../components/TextMorph";
-import { jobTokens, useActivity } from "../../lib/activity";
-import { workersCollection } from "../../lib/collections";
+import { jobTokens, type SessionCollections, useCollections } from "../../lib/collections";
 import {
 	authContextQuery,
 	membersQuery,
@@ -48,7 +47,11 @@ function Overview() {
 	const { data: recent } = useSuspenseQuery(recentEventsQuery(RECENT_LIMIT));
 	const { data: auth } = useQuery(authContextQuery());
 	const { data: members } = useQuery(membersQuery());
-	const { data: liveWorkers } = useLiveQuery((q) => q.from({ worker: workersCollection }));
+	const collections = useCollections();
+	const { data: liveWorkers } = useLiveQuery(
+		(q) => q.from({ worker: collections.workers }),
+		[collections.workers],
+	);
 	const workers = liveWorkers ?? [];
 	const models = reachableModels(workers, modelUsage.data ?? []);
 	const online = workers.filter((w) => w.online).length;
@@ -80,8 +83,8 @@ function Overview() {
 				/>
 			}
 		>
-			<Kpis summary={summary.data} organizationId={auth?.activeOrg?.id} />
-			<RunningNow organizationId={auth?.activeOrg?.id} workers={workers} />
+			<Kpis summary={summary.data} activeJobs={collections.activeJobs} />
+			<RunningNow workers={workers} activeJobs={collections.activeJobs} />
 			<div className="flex flex-wrap items-start gap-6">
 				<ModelsReachable models={models} range={range} />
 				<RecentRequests rows={recent} />
@@ -92,13 +95,15 @@ function Overview() {
 
 function Kpis({
 	summary,
-	organizationId,
+	activeJobs,
 }: {
 	summary: UsageSummary | undefined;
-	organizationId: string | undefined;
+	activeJobs: SessionCollections["activeJobs"];
 }) {
 	// Running jobs' output ticks into "Tokens out" until usage records it.
-	const { unrecordedOutputTokens } = useActivity(organizationId);
+	const { data: jobs } = useLiveQuery((q) => q.from({ job: activeJobs }), [activeJobs]);
+	const unrecordedOutputTokens = (jobs ?? []).reduce((sum, job) => sum + jobTokens(job), 0);
+	useRefetchUsageWhenJobsLeave(activeJobs);
 	const buckets = summary?.buckets ?? [];
 	const current = summary?.current;
 	const previous = summary?.previous;
@@ -327,14 +332,18 @@ const RUNNING_COLUMNS = "minmax(0,2fr) minmax(0,1fr) 80px 110px 90px";
 /** Live jobs. Subscribes here, not in the page, so only this section and the
  *  KPIs re-render as counts tick. */
 function RunningNow({
-	organizationId,
 	workers,
+	activeJobs,
 }: {
-	organizationId: string | undefined;
 	workers: ReadonlyArray<WorkerInfo>;
+	activeJobs: SessionCollections["activeJobs"];
 }) {
-	const { jobs, serverClockOffset } = useActivity(organizationId);
-	const now = useNow(jobs.length > 0 ? 500 : null) + serverClockOffset;
+	const { data: liveJobs } = useLiveQuery(
+		(q) => q.from({ job: activeJobs }).orderBy(({ job }) => job.startedAt),
+		[activeJobs],
+	);
+	const jobs = liveJobs ?? [];
+	const now = useNow(jobs.length > 0 ? 500 : null) + activeJobs.utils.serverClockOffset();
 	const names = new Map(workers.map((w) => [w.workerId, w.name]));
 	return (
 		<Section
@@ -415,6 +424,20 @@ function RunningRow({
 			</span>
 		</div>
 	);
+}
+
+/** Refetch usage whenever a job leaves the feed. The server deletes a finished
+ *  job only once its usage is recorded, so the refetch includes it. */
+function useRefetchUsageWhenJobsLeave(activeJobs: SessionCollections["activeJobs"]) {
+	const queryClient = useQueryClient();
+	useEffect(() => {
+		const subscription = activeJobs.subscribeChanges((changes) => {
+			if (changes.some((change) => change.type === "delete")) {
+				void queryClient.invalidateQueries({ queryKey: ["usage"] });
+			}
+		});
+		return () => subscription.unsubscribe();
+	}, [activeJobs, queryClient]);
 }
 
 /** The current time, refreshed every `intervalMs`; frozen while null. */

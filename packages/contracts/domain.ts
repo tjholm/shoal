@@ -138,14 +138,19 @@ export const ActiveJob = Schema.Struct({
 });
 export type ActiveJob = typeof ActiveJob.Type;
 
-/** Events on the `/api/activity/stream` SSE feed: the org's running jobs,
- *  sent whenever they change. */
-export const ActivityEvent = Schema.Struct({
-	type: Schema.tag("activity"),
-	jobs: Schema.Array(ActiveJob),
-	/** Server epoch milliseconds when sent, to read `startedAt` against. */
-	serverTime: Schema.Number,
-});
+/** Events on the `/api/activity/stream` SSE feed, shaped like the worker
+ *  feed: a `snapshot` seeds the client, then `upsert`/`delete` events follow
+ *  every change. */
+export const ActivityEvent = Schema.Union([
+	Schema.Struct({
+		type: Schema.tag("snapshot"),
+		jobs: Schema.Array(ActiveJob),
+		/** Server epoch milliseconds when sent, to read `startedAt` against. */
+		serverTime: Schema.Number,
+	}),
+	Schema.Struct({ type: Schema.tag("upsert"), job: ActiveJob }),
+	Schema.Struct({ type: Schema.tag("delete"), jobId: Schema.String }),
+]);
 export type ActivityEvent = typeof ActivityEvent.Type;
 
 /** Events on the `/api/workers/stream` SSE feed. The SSE event name is the

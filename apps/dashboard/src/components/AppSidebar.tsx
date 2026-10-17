@@ -1,7 +1,7 @@
 import { useLiveQuery } from "@tanstack/react-db";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { workersCollection } from "../lib/collections";
+import { useCollections } from "../lib/collections";
 import { membersQuery } from "../lib/queries";
 import { KeyIcon, MembersIcon, OverviewIcon } from "./icons";
 import { ShoalGlyph } from "./ShoalMark";
@@ -29,7 +29,10 @@ export function isNavItemActive(item: NavItem, pathname: string): boolean {
 
 export function AppSidebar() {
 	const { location } = useRouterState();
-	const { data: workers } = useLiveQuery((q) => q.from({ worker: workersCollection }));
+	const { workers: workersCollection } = useCollections();
+	const { data: workers } = useLiveQuery((q) => q.from({ worker: workersCollection }), [
+		workersCollection,
+	]);
 	const { data: members } = useQuery(membersQuery());
 	const list = workers ?? [];
 	const online = list.filter((w) => w.online).length;

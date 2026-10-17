@@ -15,7 +15,7 @@ import {
 	DialogTrigger,
 } from "../../components/ui/dialog";
 import { activeOrganizationId, authClient, unwrap } from "../../lib/auth-client";
-import { workersCollection } from "../../lib/collections";
+import { useCollections } from "../../lib/collections";
 import { apiKeysQuery } from "../../lib/queries";
 
 export const Route = createFileRoute("/_authed/api-keys")({
@@ -224,7 +224,10 @@ function KeyTable({
 	newKeyName: string | undefined;
 	onChange: () => void;
 }) {
-	const { data: workers } = useLiveQuery((q) => q.from({ worker: workersCollection }));
+	const { workers: workersCollection } = useCollections();
+	const { data: workers } = useLiveQuery((q) => q.from({ worker: workersCollection }), [
+		workersCollection,
+	]);
 	const sorted = [...keys].sort(
 		(a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
 	);

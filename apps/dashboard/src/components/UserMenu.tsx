@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { Check, LogOut, Monitor, Moon, Sun } from "lucide-react";
 import { authClient } from "../lib/auth-client";
+import { evictCollectionsExcept } from "../lib/collections";
 import { type ThemeMode, useTheme } from "../lib/theme";
 import {
   DropdownMenu,
@@ -44,7 +45,8 @@ export function UserMenu({ user }: { user: User }) {
   async function signOut() {
     await authClient.signOut();
     queryClient.clear();
-    navigate({ to: "/sign-in" });
+    await navigate({ to: "/sign-in" });
+    evictCollectionsExcept(null);
   }
 
   return (
