@@ -10,7 +10,7 @@ import "./styles.css";
 // TanStack DB calls it for every collection mutation, so over plain http
 // renaming a worker threw. uuid's v4 falls back to getRandomValues.
 if (typeof crypto.randomUUID !== "function") {
-	crypto.randomUUID = uuidv4 as Crypto["randomUUID"];
+	crypto.randomUUID = (() => uuidv4({})) as Crypto["randomUUID"];
 }
 
 const router = createRouter();
