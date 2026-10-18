@@ -100,15 +100,6 @@ impl TextField {
         cx.notify();
     }
 
-    pub fn set_placeholder(
-        &mut self,
-        placeholder: impl Into<SharedString>,
-        cx: &mut Context<Self>,
-    ) {
-        self.placeholder = placeholder.into();
-        cx.notify();
-    }
-
     fn left(&mut self, _: &Left, _: &mut Window, cx: &mut Context<Self>) {
         if self.selected_range.is_empty() {
             self.move_to(self.previous_boundary(self.cursor_offset()), cx);
@@ -454,12 +445,14 @@ impl Render for TextField {
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_move(cx.listener(Self::on_mouse_move))
             .w_full()
-            .px_2()
-            .py_1()
+            .h(px(34.))
+            .flex()
+            .items_center()
+            .px(px(11.))
             .rounded_md()
             .border_1()
-            .border_color(if focused { theme.accent } else { theme.border })
-            .bg(theme.surface)
+            .border_color(if focused { theme.lumen } else { theme.line_strong })
+            .bg(theme.trench)
             .text_color(theme.text)
             .overflow_hidden()
             .child(TextElement { field: cx.entity(), theme })
@@ -522,7 +515,7 @@ impl Element for TextElement {
         let field = self.field.read(cx);
         let style = window.text_style();
         let (text, color): (SharedString, _) = if field.content.is_empty() {
-            (field.placeholder.clone(), self.theme.muted)
+            (field.placeholder.clone(), self.theme.tertiary)
         } else {
             (field.display_text().into(), style.color)
         };
@@ -561,13 +554,13 @@ impl Element for TextElement {
                 point(x(field.cursor_offset()), bounds.top()),
                 size(px(1.5), bounds.size.height),
             );
-            (None, Some(fill(cursor, self.theme.accent)))
+            (None, Some(fill(cursor, self.theme.lumen)))
         } else {
             let selection = Bounds::from_corners(
                 point(x(selected.start), bounds.top()),
                 point(x(selected.end), bounds.bottom()),
             );
-            (Some(fill(selection, self.theme.selection)), None)
+            (Some(fill(selection, self.theme.lumen.opacity(0.3))), None)
         };
         Prepainted { line: Some(line), cursor, selection }
     }

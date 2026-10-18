@@ -17,14 +17,14 @@ mod tray;
 mod ui;
 
 use std::fs::{self, File, OpenOptions, TryLockError};
-use std::time::SystemTime;
+use std::time::Duration;
 
 use gpui::{App, AppContext as _, Application, Entity, Global, WindowHandle};
 use shoal_worker::Availability;
 use tray_icon::menu::MenuEvent;
 
 use controller::Controller;
-use tray::{Command, Tray};
+use tray::{Command, Tray, View};
 use ui::MainWindow;
 
 /// State that lives as long as the app.
@@ -32,6 +32,8 @@ struct Shell {
     controller: Entity<Controller>,
     tray: Tray,
     window: Option<WindowHandle<MainWindow>>,
+    /// Setup is offered once per launch.
+    offered_setup: bool,
 }
 
 impl Global for Shell {}
@@ -46,10 +48,10 @@ fn main() {
         tracing::error!("the keychain is unavailable: {error}");
     }
 
-    Application::new().run(|cx: &mut App| {
+    Application::new().with_assets(ui::Assets).run(|cx: &mut App| {
         platform::hide_from_dock();
         platform::keep_alive_without_windows(cx);
-        ui::bind_keys(cx);
+        ui::init(cx);
 
         let controller = cx.new(Controller::new);
         let tray = match Tray::new() {
@@ -60,15 +62,42 @@ fn main() {
                 return;
             }
         };
-        let needs_setup = controller.read(cx).settings().server.is_empty();
-        cx.set_global(Shell { controller: controller.clone(), tray, window: None });
+        cx.set_global(Shell {
+            controller: controller.clone(),
+            tray,
+            window: None,
+            offered_setup: false,
+        });
+        if std::env::args().any(|arg| arg == "--open") {
+            show_window(cx);
+        }
 
         cx.observe(&controller, |controller, cx| {
-            let (status, accepting) = {
+            let (view, needs_setup) = {
                 let controller = controller.read(cx);
-                (controller.status().label, controller.accepting())
+                (View::of(controller), controller.needs_setup())
             };
-            cx.global_mut::<Shell>().tray.show(&status, accepting);
+            let shell = cx.global_mut::<Shell>();
+            shell.tray.show(view);
+            // Once the keychain has been read, offer setup if it's needed.
+            if needs_setup && !std::mem::replace(&mut shell.offered_setup, true) {
+                show_window(cx);
+            }
+        })
+        .detach();
+
+        // Keeps a pause's time left current in the menu.
+        cx.spawn(async move |cx| {
+            loop {
+                cx.background_executor().timer(Duration::from_secs(30)).await;
+                let shown = cx.update(|cx| {
+                    let view = View::of(cx.global::<Shell>().controller.read(cx));
+                    cx.global_mut::<Shell>().tray.show(view);
+                });
+                if shown.is_err() {
+                    break;
+                }
+            }
         })
         .detach();
 
@@ -95,10 +124,6 @@ fn main() {
             }
         })
         .detach();
-
-        if needs_setup {
-            show_window(cx);
-        }
     });
 }
 
@@ -133,17 +158,25 @@ struct AlreadyRunning;
 fn on_menu(event: &MenuEvent, cx: &mut App) {
     let Some(command) = cx.global::<Shell>().tray.command(event) else { return };
     let controller = cx.global::<Shell>().controller.clone();
-    let set = |availability, cx: &mut App| {
-        controller.update(cx, |controller, cx| controller.set_availability(availability, cx));
-    };
+    let update =
+        |cx: &mut App, change: &dyn Fn(&mut Controller, &mut gpui::Context<Controller>)| {
+            controller.update(cx, |controller, cx| change(controller, cx));
+        };
     match command {
-        Command::Accept(accept) => {
-            set(if accept { Availability::On } else { Availability::Off }, cx);
-        }
-        Command::PauseFor(duration) => {
-            set(Availability::PausedUntil(SystemTime::now() + duration), cx);
-        }
+        Command::Accept(accept) => update(cx, &|c, cx| {
+            c.set_availability(if accept { Availability::On } else { Availability::Off }, cx);
+        }),
+        Command::PauseFor(duration) => update(cx, &|c, cx| c.pause_for(duration, cx)),
+        Command::ExtendPause(duration) => update(cx, &|c, cx| c.extend_pause(duration, cx)),
+        Command::Resume => update(cx, &|c, cx| c.set_availability(Availability::On, cx)),
+        Command::StayOff => update(cx, &|c, cx| c.set_availability(Availability::Off, cx)),
         Command::Open => show_window(cx),
+        Command::OpenDashboard => {
+            let url = controller.read(cx).settings().dashboard.clone();
+            if !url.is_empty() {
+                cx.open_url(&url);
+            }
+        }
         Command::Quit => cx.quit(),
     }
 }

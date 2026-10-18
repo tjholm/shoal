@@ -32,6 +32,20 @@ pub struct Inventory {
     pub models: Vec<WorkerModel>,
     /// Ids resident in memory, deduplicated.
     pub loaded: Vec<String>,
+    /// Each backend's own findings, in configured order.
+    pub backends: Vec<BackendStatus>,
+}
+
+/// What one backend reported on the last probe.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BackendStatus {
+    pub url: String,
+    /// The server it was detected as, e.g. "Ollama"; `None` if unreachable.
+    pub kind: Option<&'static str>,
+    pub models: Vec<String>,
+    pub loaded: Vec<String>,
+    /// Why the probe failed.
+    pub error: Option<String>,
 }
 
 /// A result a job produces before it finishes.
@@ -111,11 +125,25 @@ impl Backends {
 
         let mut inventory = Inventory::default();
         for (backend, found) in self.backends.iter().zip(found) {
+            let mut status = BackendStatus {
+                url: backend.url.clone(),
+                kind: None,
+                models: Vec::new(),
+                loaded: Vec::new(),
+                error: None,
+            };
             let found = found.unwrap_or_else(|error| {
                 tracing::warn!(backend = backend.url, "failed to fetch models: {error}");
+                status.error = Some(error.to_string());
                 discovery::Found::default()
             });
+            if status.error.is_none() {
+                status.kind = Some(found.kind);
+                status.models = found.models.iter().map(|m| m.id.clone()).collect();
+                status.loaded.clone_from(&found.loaded);
+            }
             *lock(&backend.models) = found.models.iter().map(|m| m.id.clone()).collect();
+            inventory.backends.push(status);
             for model in found.models {
                 if !inventory.models.iter().any(|m| m.id == model.id) {
                     inventory.models.push(model);

@@ -17,6 +17,8 @@ pub struct Settings {
     pub server: String,
     /// Empty keeps whatever name the server has stored.
     pub name: String,
+    /// Opened from the menu; empty hides the item.
+    pub dashboard: String,
     pub backends: Vec<String>,
     pub concurrency: NonZeroU32,
     pub availability: SavedAvailability,
@@ -27,6 +29,7 @@ impl Default for Settings {
         Self {
             server: String::new(),
             name: String::new(),
+            dashboard: String::new(),
             backends: vec!["http://localhost:11434".to_owned()],
             concurrency: NonZeroU32::MIN,
             availability: SavedAvailability::On,

@@ -20,7 +20,7 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async};
 
 use crate::identity::{self, Identity};
 use crate::job::{self, Job};
-use crate::state::{self, Connection};
+use crate::state::{self, Connection, Outcome};
 use crate::supervisor::{Published, set_connection};
 use crate::{Config, Desired};
 
@@ -191,7 +191,7 @@ impl Session<'_, '_> {
                 if let Some(job) = self.running.remove(&job_id) {
                     tracing::info!("cancel received for job {job_id}");
                     job.abort();
-                    self.forget(&job_id);
+                    self.end(&job_id, Outcome::Cancelled);
                 }
             }
         }
@@ -267,11 +267,11 @@ impl Session<'_, '_> {
         finished: Result<(tokio::task::Id, String), tokio::task::JoinError>,
     ) -> Result<(), End> {
         match finished {
+            // The job recorded how it ended.
             Ok((_, job_id)) => {
                 self.running.remove(&job_id);
-                self.forget(&job_id);
             }
-            // Cancelled jobs were forgotten when cancelled.
+            // Recorded when cancelled.
             Err(error) if error.is_cancelled() => {}
             Err(error) => {
                 let task = error.id();
@@ -280,8 +280,8 @@ impl Session<'_, '_> {
                 if let Some(job_id) = job_id {
                     tracing::error!(job = job_id, "job panicked: {error}");
                     self.running.remove(&job_id);
-                    self.forget(&job_id);
                     let message = "The worker failed while running this job.".to_owned();
+                    self.end(&job_id, Outcome::Failed(message.clone()));
                     self.send(&WorkerMessage::Error { job_id, message }).await?;
                 }
             }
@@ -289,12 +289,8 @@ impl Session<'_, '_> {
         Ok(())
     }
 
-    fn forget(&self, job_id: &str) {
-        self.context.state.send_if_modified(|s| {
-            let before = s.jobs.len();
-            s.jobs.retain(|job| job.id != job_id);
-            s.jobs.len() != before
-        });
+    fn end(&self, job_id: &str, outcome: Outcome) {
+        self.context.state.send_if_modified(|s| s.finish(job_id, outcome, None));
     }
 
     /// `models` then `stats`, as the server expects after every probe.

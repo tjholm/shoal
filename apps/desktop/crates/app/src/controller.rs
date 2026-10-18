@@ -1,11 +1,12 @@
 //! The app's model: owns the worker and its settings, mirrors the worker's
 //! state into GPUI, and turns it into the status the tray and window show.
 
+use std::future::Future;
 use std::num::NonZeroU32;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use gpui::{Context, Task};
-use shoal_worker::{Availability, Connection, State, Token, Worker};
+use shoal_worker::{Availability, BackendStatus, Connection, State, Token, Worker};
 
 use crate::settings::Settings;
 use crate::{keychain, login};
@@ -17,14 +18,23 @@ const UI_REFRESH: Duration = Duration::from_millis(100);
 pub struct Controller {
     // Declared before the runtime it runs on, so it is dropped first.
     worker: Worker,
-    _runtime: tokio::runtime::Runtime,
+    runtime: tokio::runtime::Runtime,
     settings: Settings,
     token: Option<Token>,
     /// The keychain is slow to read, so the token arrives after startup.
     token_loaded: bool,
     launch_at_login: bool,
     state: State,
+    online_since: Option<Instant>,
 }
+
+/// Where local backends usually listen, probed on first run.
+const LOCAL_BACKENDS: [&str; 4] = [
+    "http://localhost:11434",
+    "http://localhost:1234",
+    "http://localhost:8080",
+    "http://localhost:8000",
+];
 
 /// Settings as edited in the window.
 #[derive(Debug)]
@@ -33,6 +43,7 @@ pub struct Edit {
     /// A newly entered token; `None` keeps the saved one.
     pub token: Option<Token>,
     pub name: String,
+    pub dashboard: String,
     pub backends: Vec<String>,
     pub concurrency: NonZeroU32,
     pub launch_at_login: bool,
@@ -87,6 +98,12 @@ impl Controller {
         cx.spawn(async move |this, cx| {
             while let Ok(state) = from_worker.recv().await {
                 let updated = this.update(cx, |this, cx| {
+                    let online = matches!(state.connection, Connection::Online { .. });
+                    match (online, this.online_since) {
+                        (true, None) => this.online_since = Some(Instant::now()),
+                        (false, Some(_)) => this.online_since = None,
+                        _ => {}
+                    }
                     this.state = state;
                     cx.notify();
                 });
@@ -122,12 +139,13 @@ impl Controller {
 
         Self {
             worker,
-            _runtime: runtime,
+            runtime,
             settings,
             token: None,
             token_loaded: false,
             launch_at_login: login::is_enabled(),
             state,
+            online_since: None,
         }
     }
 
@@ -147,13 +165,33 @@ impl Controller {
         self.launch_at_login
     }
 
-    /// What the user asked for, which the worker may not have caught up with.
-    fn availability(&self) -> Availability {
-        Availability::from(self.settings.availability).at(SystemTime::now())
+    /// When the current connection was accepted by the server.
+    pub fn online_since(&self) -> Option<Instant> {
+        self.online_since
     }
 
-    pub fn accepting(&self) -> bool {
-        self.availability() == Availability::On
+    /// Whether the window should walk the user through connecting.
+    pub fn needs_setup(&self) -> bool {
+        self.token_loaded && (self.settings.server.is_empty() || self.token.is_none())
+    }
+
+    /// The server's host, for display.
+    pub fn server_host(&self) -> &str {
+        let server = &self.settings.server;
+        let rest = server.split_once("://").map_or(server.as_str(), |(_, rest)| rest);
+        rest.split(['/', '?']).next().unwrap_or(rest)
+    }
+
+    /// Probes the usual local ports for backends.
+    pub fn detect_backends(&self) -> impl Future<Output = Vec<BackendStatus>> + use<> {
+        let probe =
+            self.runtime.spawn(shoal_worker::probe(LOCAL_BACKENDS.map(str::to_owned).into()));
+        async move { probe.await.unwrap_or_default() }
+    }
+
+    /// What the user asked for, which the worker may not have caught up with.
+    pub fn availability(&self) -> Availability {
+        Availability::from(self.settings.availability).at(SystemTime::now())
     }
 
     /// Switching off or pausing disconnects at once, abandoning running jobs.
@@ -164,6 +202,19 @@ impl Controller {
         cx.notify();
     }
 
+    pub fn pause_for(&mut self, duration: Duration, cx: &mut Context<Self>) {
+        self.set_availability(Availability::PausedUntil(SystemTime::now() + duration), cx);
+    }
+
+    /// Adds to a running pause, or starts one.
+    pub fn extend_pause(&mut self, duration: Duration, cx: &mut Context<Self>) {
+        let from = match self.availability() {
+            Availability::PausedUntil(until) => until,
+            Availability::On | Availability::Off => SystemTime::now(),
+        };
+        self.set_availability(Availability::PausedUntil(from + duration), cx);
+    }
+
     /// Saves the settings and token, then reconnects with them. The keychain
     /// and login item are updated off the UI thread.
     pub fn apply(&mut self, edit: Edit, cx: &mut Context<Self>) -> Task<Result<(), String>> {
@@ -171,7 +222,7 @@ impl Controller {
         let current_token = self.token.clone();
         let change_login =
             (edit.launch_at_login != self.launch_at_login).then_some(edit.launch_at_login);
-        let Edit { server, token, name, backends, concurrency, launch_at_login } = edit;
+        let Edit { server, token, name, dashboard, backends, concurrency, launch_at_login } = edit;
         cx.spawn(async move |this, cx| {
             let (server, token) = cx
                 .background_executor()
@@ -200,6 +251,7 @@ impl Controller {
                 this.settings = Settings {
                     server,
                     name,
+                    dashboard,
                     backends,
                     concurrency,
                     availability: this.settings.availability,

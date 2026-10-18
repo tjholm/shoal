@@ -20,6 +20,7 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 tray-icon = { version = "=0.26.1", default-features = false }
 unicode-segmentation = "1.13.3"
 keyring-core = "1.0.1"
+resvg = { version = "0.45.1", default-features = false }
 
 [lints]
 workspace = true

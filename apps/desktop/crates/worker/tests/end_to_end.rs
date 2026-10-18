@@ -9,7 +9,7 @@ use std::time::Duration;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use shoal_worker::{Availability, Config, Connection, State, Token, Worker};
+use shoal_worker::{Availability, Config, Connection, Outcome, State, Token, Worker};
 use tempfile::TempDir;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
@@ -485,6 +485,8 @@ async fn streams_a_chat_job() {
         r#"{"model":"m1","messages":[{"content":"hi","role":"user"}],"stream":true,"stream_options":{"include_usage":true},"max_tokens":5,"temperature":0.7,"tools":[{"type":"function"}],"tool_choice":"auto"}"#
     );
     harness.wait_for(|s| s.jobs_completed == 1 && s.jobs.is_empty()).await;
+    let state = harness.state.borrow().clone();
+    assert_eq!((state.tokens_out, &state.recent[0].outcome), (4, &Outcome::Done));
 }
 
 #[tokio::test]
@@ -595,6 +597,10 @@ async fn reports_a_backend_error_without_done() {
     conn.assert_quiet().await;
     harness.wait_for(|s| s.jobs.is_empty()).await;
     assert_eq!(harness.state.borrow().jobs_completed, 0);
+    assert_eq!(
+        harness.state.borrow().recent[0].outcome,
+        Outcome::Failed("Backend returned 503: overloaded".into())
+    );
 }
 
 #[tokio::test]
@@ -610,6 +616,7 @@ async fn cancel_aborts_the_backend_request_silently() {
     harness.backend.hung_up().await;
     conn.assert_quiet().await;
     harness.wait_for(|s| s.jobs.is_empty()).await;
+    assert_eq!(harness.state.borrow().recent[0].outcome, Outcome::Cancelled);
 }
 
 #[tokio::test]
@@ -626,6 +633,7 @@ async fn switching_off_disconnects_and_drops_running_jobs() {
     assert_eq!(u16::from(close.code), 1000);
     harness.backend.hung_up().await;
     harness.wait_for(|s| s.connection == Connection::Offline && s.jobs.is_empty()).await;
+    assert_eq!(harness.state.borrow().recent[0].outcome, Outcome::Abandoned);
     harness.server.assert_no_connection(BEYOND_BACKOFF).await;
 }
 

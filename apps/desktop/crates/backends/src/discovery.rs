@@ -20,6 +20,7 @@ const OLLAMA_SHOW_CONCURRENCY: usize = 4;
 
 #[derive(Debug, Default)]
 pub(crate) struct Found {
+    pub kind: &'static str,
     pub models: Vec<WorkerModel>,
     pub loaded: Vec<String>,
 }
@@ -78,7 +79,16 @@ impl Backend {
             tracing::warn!(backend = self.url, ?dialect, "failed to fetch loaded models: {error}");
             Vec::new()
         });
-        Ok(Found { models, loaded })
+        let kind = match dialect {
+            Dialect::Lemonade => "Lemonade",
+            Dialect::LmStudio => "LM Studio",
+            Dialect::Vllm => "vLLM",
+            Dialect::LlamaSwap => "llama-swap",
+            Dialect::LlamaCpp => "llama.cpp",
+            Dialect::Ollama if self.show_unavailable.load(Ordering::Relaxed) => "OpenAI-compatible",
+            Dialect::Ollama => "Ollama",
+        };
+        Ok(Found { kind, models, loaded })
     }
 
     /// The first dialect any listed model matches, checked in a fixed order.

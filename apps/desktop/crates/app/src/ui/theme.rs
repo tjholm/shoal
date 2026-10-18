@@ -1,22 +1,34 @@
+//! The shoal palette, from the dashboard's design tokens.
+
 use gpui::{Hsla, Window, WindowAppearance, rgb};
 
 use crate::controller::Tone;
 
-/// Colours for the system's light or dark appearance.
+pub const SANS: &str = "Geist";
+pub const MONO: &str = "Geist Mono";
+
 #[derive(Debug, Clone, Copy)]
 pub struct Theme {
-    pub background: Hsla,
-    pub surface: Hsla,
-    pub border: Hsla,
+    /// The window behind everything.
+    pub abyss: Hsla,
+    /// The sidebar and footer.
+    pub trench: Hsla,
+    /// Cards and lists.
+    pub shelf: Hsla,
+    /// Selected and hovered rows.
+    pub reef: Hsla,
+    pub line: Hsla,
+    pub line_strong: Hsla,
     pub text: Hsla,
-    pub muted: Hsla,
-    pub accent: Hsla,
-    pub on_accent: Hsla,
-    pub selection: Hsla,
-    pub good: Hsla,
-    pub busy: Hsla,
-    pub idle: Hsla,
-    pub problem: Hsla,
+    pub secondary: Hsla,
+    pub tertiary: Hsla,
+    /// The accent: working, online, primary actions.
+    pub lumen: Hsla,
+    /// Text on lumen.
+    pub lumen_ink: Hsla,
+    pub amber: Hsla,
+    pub coral: Hsla,
+    pub current: Hsla,
 }
 
 impl Theme {
@@ -27,46 +39,60 @@ impl Theme {
         }
     }
 
-    fn light() -> Self {
+    fn dark() -> Self {
         Self {
-            background: rgb(0xf5_f5_f7).into(),
-            surface: rgb(0xff_ff_ff).into(),
-            border: rgb(0xdc_dc_e0).into(),
-            text: rgb(0x1d_1d_1f).into(),
-            muted: rgb(0x6e_6e_73).into(),
-            accent: rgb(0x2f_6f_ed).into(),
-            on_accent: rgb(0xff_ff_ff).into(),
-            selection: rgb(0xb3_cd_fb).into(),
-            good: rgb(0x2b_a6_4f).into(),
-            busy: rgb(0xd9_8e_04).into(),
-            idle: rgb(0x8e_8e_93).into(),
-            problem: rgb(0xd7_37_2f).into(),
+            abyss: rgb(0x07_0b_10).into(),
+            trench: rgb(0x0b_11_18).into(),
+            shelf: rgb(0x10_18_21).into(),
+            reef: rgb(0x16_21_2d).into(),
+            line: rgb(0x21_30_41).into(),
+            line_strong: rgb(0x2f_43_57).into(),
+            text: rgb(0xe6_ed_f3).into(),
+            secondary: rgb(0x9a_ab_bd).into(),
+            tertiary: rgb(0x6b_7d_90).into(),
+            lumen: rgb(0x3f_e0_d0).into(),
+            lumen_ink: rgb(0x03_22_1f).into(),
+            amber: rgb(0xf2_b5_4a).into(),
+            coral: rgb(0xff_7a_6b).into(),
+            current: rgb(0x6a_a8_ff).into(),
         }
     }
 
-    fn dark() -> Self {
+    fn light() -> Self {
         Self {
-            background: rgb(0x1c_1c_1e).into(),
-            surface: rgb(0x2c_2c_2e).into(),
-            border: rgb(0x3a_3a_3c).into(),
-            text: rgb(0xf2_f2_f7).into(),
-            muted: rgb(0x98_98_9f).into(),
-            accent: rgb(0x40_7c_f6).into(),
-            on_accent: rgb(0xff_ff_ff).into(),
-            selection: rgb(0x2d_4a_80).into(),
-            good: rgb(0x34_c7_59).into(),
-            busy: rgb(0xff_b3_40).into(),
-            idle: rgb(0x8e_8e_93).into(),
-            problem: rgb(0xff_5f_57).into(),
+            abyss: rgb(0xf6_f8_fa).into(),
+            trench: rgb(0xed_f1_f5).into(),
+            shelf: rgb(0xff_ff_ff).into(),
+            reef: rgb(0xee_f2_f6).into(),
+            line: rgb(0xd6_de_e6).into(),
+            line_strong: rgb(0xb9_c6_d3).into(),
+            text: rgb(0x0b_11_18).into(),
+            secondary: rgb(0x3d_4c_5c).into(),
+            tertiary: rgb(0x5b_6b_7c).into(),
+            lumen: rgb(0x0b_7f_74).into(),
+            lumen_ink: rgb(0xff_ff_ff).into(),
+            amber: rgb(0x9a_62_00).into(),
+            coral: rgb(0xc2_41_2f).into(),
+            current: rgb(0x25_63_c9).into(),
         }
     }
 
     pub fn tone(&self, tone: Tone) -> Hsla {
         match tone {
-            Tone::Good => self.good,
-            Tone::Busy => self.busy,
-            Tone::Idle => self.idle,
-            Tone::Problem => self.problem,
+            Tone::Good => self.lumen,
+            Tone::Busy => self.amber,
+            Tone::Idle => self.tertiary,
+            Tone::Problem => self.coral,
         }
     }
+}
+
+/// A tint of `color` for backgrounds.
+pub fn wash(color: Hsla) -> Hsla {
+    color.opacity(0.12)
+}
+
+/// A tint of `color` for borders.
+pub fn edge(color: Hsla) -> Hsla {
+    color.opacity(0.32)
 }

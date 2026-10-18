@@ -16,7 +16,15 @@ On first launch the window opens for setup:
 - **Token:** an API key from the shoal dashboard. It is saved to the Keychain (Windows: Credential Manager), never to a file or the shell history.
 - **Backends:** comma-separated, tried in order. Ollama, LM Studio, llama.cpp, llama-swap, vLLM and Lemonade are detected automatically.
 
-After that the app lives in the menu bar. From there you can switch work on and off, pause for a while, or open the window to see running jobs, detected models and settings. Switching off or pausing disconnects at once, abandoning any running jobs.
+After that the app lives in the menu bar, as the shoal glyph: its hub is lit while it's accepting work. From the menu you can switch work on or off, pause it for a while, extend a pause, or open the window. Pass `--open` to open the window at launch.
+
+The window has four pages:
+- **Overview:** whether work is on, running jobs with live tok/s, and totals since launch.
+- **Models:** every model, grouped by backend, with what's loaded.
+- **Activity:** the last 50 jobs and how each ended.
+- **Settings:** the server, token, backends (with whether each is responding), concurrency, launch at login, and an optional dashboard URL for the menu's "Open dashboard".
+
+Switching off or pausing disconnects at once, abandoning any running jobs.
 
 Logs go to stderr; set `RUST_LOG=debug` for more.
 

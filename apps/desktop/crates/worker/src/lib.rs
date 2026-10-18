@@ -19,9 +19,9 @@ use tokio::sync::watch;
 use tokio_util::task::AbortOnDropHandle;
 
 pub use config::{Config, Token};
-pub use shoal_backends::Inventory;
+pub use shoal_backends::{BackendStatus, Inventory};
 pub use shoal_protocol::{ModelCapability, ModelPurpose, ModelTask, WorkerModel};
-pub use state::{Availability, Connection, Job, State};
+pub use state::{Availability, Connection, Finished, Job, Outcome, State};
 
 /// What the worker should be doing.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -93,6 +93,11 @@ impl Worker {
     pub fn subscribe(&self) -> watch::Receiver<State> {
         self.state.clone()
     }
+}
+
+/// Probes backends once, e.g. to find the ones running locally.
+pub async fn probe(urls: Vec<String>) -> Vec<BackendStatus> {
+    shoal_backends::Backends::new(urls).refresh().await.backends
 }
 
 /// Sets `slot` to `value`, returning whether that changed it.

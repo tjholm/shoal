@@ -27,6 +27,16 @@ pub fn elapsed(duration: Duration) -> String {
     }
 }
 
+/// "940", "31.2k", "4.1M".
+#[expect(clippy::cast_precision_loss, reason = "display precision only")]
+pub fn count(n: u64) -> String {
+    match n {
+        0..1_000 => n.to_string(),
+        1_000..1_000_000 => format!("{:.1}k", n as f64 / 1e3),
+        _ => format!("{:.1}M", n as f64 / 1e6),
+    }
+}
+
 /// Tokens per second, or `None` until there's enough to measure.
 #[expect(clippy::cast_precision_loss, reason = "token counts are far below 2^52")]
 pub fn rate(tokens: u64, duration: Duration) -> Option<String> {
@@ -45,5 +55,9 @@ mod tests {
         assert_eq!(elapsed(Duration::from_mins(62)), "1h 02m");
         assert_eq!(rate(84, Duration::from_secs(2)), Some("42.0 tok/s".into()));
         assert_eq!(rate(1, Duration::from_secs(2)), None);
+        assert_eq!(
+            (count(940), count(31_240), count(4_100_000)),
+            ("940".into(), "31.2k".into(), "4.1M".into())
+        );
     }
 }

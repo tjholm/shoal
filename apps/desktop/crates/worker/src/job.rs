@@ -5,6 +5,7 @@ use shoal_backends::{Backends, Output};
 use shoal_protocol::{InferOptions, ModelTask, WorkerMessage};
 use tokio::sync::mpsc::UnboundedSender;
 
+use crate::state::Outcome;
 use crate::supervisor::Published;
 
 /// One `infer` request.
@@ -47,7 +48,10 @@ pub(crate) async fn run(
 
     match result {
         Ok(finish) => {
-            state.send_modify(|s| s.jobs_completed += 1);
+            let tokens = finish.usage.map(|usage| usage.completion_tokens);
+            state.send_modify(|s| {
+                s.finish(&job.id, Outcome::Done, tokens);
+            });
             send(WorkerMessage::Done {
                 job_id: job.id.clone(),
                 finish_reason: finish.reason,
@@ -56,6 +60,9 @@ pub(crate) async fn run(
         }
         Err(error) => {
             tracing::warn!(job = job.id, "inference error: {error}");
+            state.send_modify(|s| {
+                s.finish(&job.id, Outcome::Failed(error.to_string()), None);
+            });
             send(WorkerMessage::Error { job_id: job.id.clone(), message: error.to_string() });
         }
     }

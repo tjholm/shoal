@@ -1,4 +1,5 @@
-use std::time::{Instant, SystemTime};
+use std::collections::VecDeque;
+use std::time::{Duration, Instant, SystemTime};
 
 use shoal_backends::Inventory;
 use shoal_protocol::ModelTask;
@@ -61,6 +62,31 @@ pub struct Job {
     pub thinking: bool,
 }
 
+/// A job that has ended.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Finished {
+    pub task: ModelTask,
+    pub model: String,
+    pub ended: SystemTime,
+    pub duration: Duration,
+    /// Output tokens: exact when the backend reported usage.
+    pub tokens: u64,
+    pub outcome: Outcome,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Outcome {
+    Done,
+    Failed(String),
+    /// The server cancelled it, e.g. because the client went away.
+    Cancelled,
+    /// The connection ended, or work was switched off, while it ran.
+    Abandoned,
+}
+
+/// How many ended jobs [`State::recent`] keeps.
+const RECENT: usize = 50;
+
 /// Everything a UI shows about the worker.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct State {
@@ -71,4 +97,31 @@ pub struct State {
     pub jobs: Vec<Job>,
     /// Jobs that finished successfully since the worker started.
     pub jobs_completed: u64,
+    /// Output tokens served since the worker started.
+    pub tokens_out: u64,
+    /// The latest ended jobs, newest first.
+    pub recent: VecDeque<Finished>,
+}
+
+impl State {
+    /// Moves a running job to [`State::recent`]; `false` if it wasn't running.
+    pub(crate) fn finish(&mut self, id: &str, outcome: Outcome, tokens: Option<u64>) -> bool {
+        let Some(index) = self.jobs.iter().position(|job| job.id == id) else { return false };
+        let job = self.jobs.remove(index);
+        let tokens = tokens.unwrap_or(job.chunks);
+        if outcome == Outcome::Done {
+            self.jobs_completed += 1;
+            self.tokens_out += tokens;
+        }
+        self.recent.push_front(Finished {
+            task: job.task,
+            model: job.model,
+            ended: SystemTime::now(),
+            duration: job.started.elapsed(),
+            tokens,
+            outcome,
+        });
+        self.recent.truncate(RECENT);
+        true
+    }
 }

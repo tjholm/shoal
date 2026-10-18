@@ -12,7 +12,7 @@ use tokio::time::sleep;
 use tokio_util::task::AbortOnDropHandle;
 
 use crate::session::{self, End};
-use crate::state::{Availability, Connection, State};
+use crate::state::{Availability, Connection, Outcome, State};
 use crate::{Config, Desired, identity, replace};
 
 const PROBE_INTERVAL: Duration = Duration::from_secs(10);
@@ -124,7 +124,12 @@ async fn serve(
                     started,
                 };
                 let end = session::run(context, &mut identity, desired).await;
-                state.send_if_modified(|s| replace(&mut s.jobs, Vec::new()));
+                state.send_if_modified(|s| {
+                    let running: Vec<String> = s.jobs.iter().map(|job| job.id.clone()).collect();
+                    running
+                        .iter()
+                        .fold(false, |ended, id| s.finish(id, Outcome::Abandoned, None) | ended)
+                });
                 let reason = match end {
                     End::Interrupted => continue,
                     End::Stopped => return Err(Stopped),
