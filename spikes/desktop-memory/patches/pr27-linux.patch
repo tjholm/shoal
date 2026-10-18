@@ -1,0 +1,37 @@
+diff --git a/apps/desktop/Cargo.toml b/apps/desktop/Cargo.toml
+index a229fd1..ca0fb52 100644
+--- a/apps/desktop/Cargo.toml
++++ b/apps/desktop/Cargo.toml
+@@ -27,3 +27,6 @@ missing_errors_doc = "allow"
+ lto = "thin"
+ codegen-units = 1
+ strip = true
++
++[patch.crates-io]
++xattr = { path = "patches/xattr" }
+diff --git a/apps/desktop/crates/app/Cargo.toml b/apps/desktop/crates/app/Cargo.toml
+index 3052746..d50e43e 100644
+--- a/apps/desktop/crates/app/Cargo.toml
++++ b/apps/desktop/crates/app/Cargo.toml
+@@ -32,3 +32,7 @@ objc2-app-kit = { version = "0.3.2", features = ["NSApplication", "NSRunningAppl
+ 
+ [target."cfg(windows)".dependencies]
+ windows-native-keyring-store = "1.1.0"
++
++[target.'cfg(target_os = "linux")'.dependencies]
++tray-icon = { version = "=0.26.1", default-features = false, features = ["ksni"] }
++dbus-secret-service-keyring-store = { version = "1.0.1", features = ["crypto-rust"] }
+diff --git a/apps/desktop/crates/app/src/keychain.rs b/apps/desktop/crates/app/src/keychain.rs
+index fb87bf1..9c74afa 100644
+--- a/apps/desktop/crates/app/src/keychain.rs
++++ b/apps/desktop/crates/app/src/keychain.rs
+@@ -11,6 +11,8 @@ pub fn init() -> Result<(), Error> {
+     keyring_core::set_default_store(apple_native_keyring_store::keychain::Store::new()?);
+     #[cfg(windows)]
+     keyring_core::set_default_store(windows_native_keyring_store::Store::new()?);
++    #[cfg(target_os = "linux")]
++    keyring_core::set_default_store(dbus_secret_service_keyring_store::Store::new()?);
+     Ok(())
+ }
+ 
+# xattr: copy xattr-0.2.3 from the cargo registry into apps/desktop/patches/xattr and replace ::libc::ENOATTR with ::libc::ENODATA in src/sys/mod.rs

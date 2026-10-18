@@ -1,0 +1,8 @@
+{
+	"name": "shoal-electrobun-spike",
+	"private": true,
+	"type": "module",
+	"dependencies": {
+		"electrobun": "2.0.2"
+	}
+}
