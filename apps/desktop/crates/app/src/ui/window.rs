@@ -234,7 +234,6 @@ fn nav_item(
         .id(SharedString::from(format!("nav-{page:?}")))
         .flex()
         .items_center()
-        .gap(px(10.))
         .h(px(32.))
         .px(px(10.))
         .rounded_md()
@@ -243,12 +242,20 @@ fn nav_item(
         .text_color(color)
         .when(active, |this| this.bg(theme.reef))
         .hover(move |style| style.bg(theme.reef).text_color(theme.text))
-        .child(svg().path(icon).size(px(16.)).flex_none().text_color(color))
-        .child(label)
+        // Icon and label in their own row, so the count can't squeeze the gap.
+        .child(
+            div()
+                .flex()
+                .flex_1()
+                .items_center()
+                .gap(px(10.))
+                .child(svg().path(icon).size(px(16.)).flex_none().text_color(color))
+                .child(label),
+        )
         .when_some(count, |this, count| {
             this.child(
                 div()
-                    .ml_auto()
+                    .flex_none()
                     .font_family(MONO)
                     .text_xs()
                     .text_color(theme.tertiary)
