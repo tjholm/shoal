@@ -408,18 +408,21 @@ function Roles() {
 			text: "See the fleet and usage. Uses keys an admin creates to call the API or run workers.",
 		},
 	];
+	// One column until all three roles fit side by side, so no row is left short.
 	return (
-		<section
-			aria-label="Roles"
-			className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-px overflow-hidden rounded-md border border-line bg-line"
-		>
-			{roles.map((role) => (
-				<div key={role.name} className="flex flex-col gap-2 bg-trench px-[18px] py-4">
-					<span className={`font-mono text-xs ${role.tone}`}>{role.name}</span>
-					<span className="text-[13px] leading-[1.55] text-mist">{role.text}</span>
-				</div>
-			))}
-		</section>
+		<div className="@container">
+			<section
+				aria-label="Roles"
+				className="grid grid-cols-1 gap-px overflow-hidden rounded-md border border-line bg-line @min-[640px]:grid-cols-3"
+			>
+				{roles.map((role) => (
+					<div key={role.name} className="flex flex-col gap-2 bg-trench px-[18px] py-4">
+						<span className={`font-mono text-xs ${role.tone}`}>{role.name}</span>
+						<span className="text-[13px] leading-[1.55] text-mist">{role.text}</span>
+					</div>
+				))}
+			</section>
+		</div>
 	);
 }
 

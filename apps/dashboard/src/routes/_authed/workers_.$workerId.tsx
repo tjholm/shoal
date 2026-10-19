@@ -234,31 +234,34 @@ function SummaryCards({
 			? `${(detail.avgDurationMs / 1000).toFixed(1)}s`
 			: "—";
 
+	// Columns step 1 → 2 → 4 with the grid's own width, so rows are always full.
 	return (
-		<section className="rise-in grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-px overflow-hidden rounded-md border border-line bg-line">
-			<Stat
-				label={`Jobs (${retentionLabel})`}
-				value={formatNumber(detail.totalJobs)}
-			/>
-			<Stat
-				label={`Tokens (${retentionLabel})`}
-				value={formatNumber(totalTokens)}
-			>
-				{formatNumber(detail.totalPromptTokens)} prompt ·{" "}
-				{formatNumber(detail.totalCompletionTokens)} completion
-			</Stat>
-			<Stat label="Avg Output / Job" value={formatNumber(avgTokens)} />
-			<Stat
-				label={detail.online ? "Connected" : "Last Seen"}
-				value={
-					detail.online
-						? formatDuration(detail.connectedMs ?? 0)
-						: `${formatDuration(Date.now() - detail.lastSeenAt)} ago`
-				}
-			>
-				avg {avgDuration} per job
-			</Stat>
-		</section>
+		<div className="@container">
+			<section className="rise-in grid grid-cols-1 gap-px overflow-hidden rounded-md border border-line bg-line @min-[400px]:grid-cols-2 @min-[800px]:grid-cols-4">
+				<Stat
+					label={`Jobs (${retentionLabel})`}
+					value={formatNumber(detail.totalJobs)}
+				/>
+				<Stat
+					label={`Tokens (${retentionLabel})`}
+					value={formatNumber(totalTokens)}
+				>
+					{formatNumber(detail.totalPromptTokens)} prompt ·{" "}
+					{formatNumber(detail.totalCompletionTokens)} completion
+				</Stat>
+				<Stat label="Avg Output / Job" value={formatNumber(avgTokens)} />
+				<Stat
+					label={detail.online ? "Connected" : "Last Seen"}
+					value={
+						detail.online
+							? formatDuration(detail.connectedMs ?? 0)
+							: `${formatDuration(Date.now() - detail.lastSeenAt)} ago`
+					}
+				>
+					avg {avgDuration} per job
+				</Stat>
+			</section>
+		</div>
 	);
 }
 
