@@ -62,16 +62,18 @@ export class IdentityStore extends Context.Service<
 				const path = yield* Path.Path;
 				const crypto = yield* Crypto.Crypto;
 
-				const stateRoot = yield* Config.String("XDG_STATE_HOME").pipe(
+				const xdgStateRoot = yield* Config.String("XDG_STATE_HOME").pipe(
 					Config.withDefault(path.join(os.homedir(), ".local", "state")),
+				);
+				const stateDir = yield* Config.String("SHOAL_HOME").pipe(
+					Config.withDefault(path.join(xdgStateRoot, "shoal")),
 				);
 				const digest = yield* crypto.digest(
 					"SHA-256",
 					new TextEncoder().encode(serverUrl),
 				);
 				const file = path.join(
-					stateRoot,
-					"shoal",
+					stateDir,
 					`identity-${Hex.encode(digest).slice(0, 16)}.json`,
 				);
 

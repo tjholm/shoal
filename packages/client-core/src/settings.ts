@@ -43,8 +43,7 @@ export interface Settings {
 }
 
 export const settingsPath = path.join(
-	process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), ".config"),
-	"shoal",
+	process.env.SHOAL_HOME ?? path.join(process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), ".config"), "shoal"),
 	"worker.json",
 );
 

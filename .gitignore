@@ -100,3 +100,4 @@ typings/
 *.db
 *.db-wal
 *.db-shm
+.dev-state/
