@@ -272,7 +272,7 @@ const changed = () => {
 	}, 100);
 };
 // Keeps the tray's "time left" and job rates current when nothing else changes.
-setInterval(changed, 30_000);
+setInterval(changed, 1_000);
 
 /** (Re)start the worker from the saved settings and token. */
 const restartWorker = async () => {
