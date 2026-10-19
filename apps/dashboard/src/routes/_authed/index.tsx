@@ -16,7 +16,7 @@ import { FitNumber } from "@shoal/ui/components/FitNumber";
 import { KIND_LABEL, KindIcon } from "../../components/icons";
 import { Fact, Page, Section, TableHead } from "@shoal/ui/components/Page";
 import { Segmented } from "@shoal/ui/components/Segmented";
-import { Sparkline } from "../../components/Sparkline";
+import { Sparkline } from "@shoal/ui/components/Sparkline";
 import { TextMorph } from "@shoal/ui/components/TextMorph";
 import {
 	jobTokens,

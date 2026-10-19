@@ -1,4 +1,5 @@
 import { FitNumber } from "@shoal/ui/components/FitNumber";
+import { Sparkline } from "@shoal/ui/components/Sparkline";
 import { TextMorph } from "@shoal/ui/components/TextMorph";
 import { type ReactNode, useRef, useState } from "react";
 import { elapsed, isPaused, statusLabel } from "../shared/format";
@@ -14,10 +15,8 @@ import {
 	Empty,
 	Row,
 	SectionTitle,
-	Sparkline,
 	TASK_NAME,
 	TONE_COLOR,
-	type Tone,
 	useNow,
 } from "./ui";
 
@@ -192,7 +191,7 @@ function Running({
 						const samples = rates.get(job.id)?.samples ?? [];
 						const recent = samples.slice(-5);
 						const speed = recent.length > 0 ? recent.reduce((a, b) => a + b, 0) / recent.length : null;
-						const tone: Tone = job.thinking ? "amber" : "lumen";
+						const tone = job.thinking ? "amber" : "lumen";
 						return (
 							<Row key={job.id} className="py-3.5">
 								<div className="flex min-w-0 flex-1 flex-col gap-1.5">
@@ -200,7 +199,12 @@ function Running({
 										<span className="truncate font-mono text-sm">{job.model}</span>
 										<Chip tone={job.thinking ? "amber" : "current"}>{job.thinking ? "thinking" : TASK_NAME[job.task]}</Chip>
 									</div>
-									{job.task === "chat" && <Sparkline samples={samples} tone={tone} />}
+									{job.task === "chat" && (
+										<div className="w-[220px]">
+											{/* Zero-padded to a full window so bars keep their width and fill in from the right. */}
+											<Sparkline values={[...Array(RATE_SAMPLES - samples.length).fill(0), ...samples]} height={18} tone={tone} />
+										</div>
+									)}
 								</div>
 								<span className="flex w-[110px] flex-none gap-1 font-mono text-[13px] text-mist">
 									<FitNumber value={job.tokens} className="flex-1 text-right" /> tokens

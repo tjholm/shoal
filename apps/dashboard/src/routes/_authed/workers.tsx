@@ -14,7 +14,7 @@ import {
 } from "../../components/icons";
 import { Fact, Page, TableHead } from "@shoal/ui/components/Page";
 import { Segmented } from "@shoal/ui/components/Segmented";
-import { Sparkline } from "../../components/Sparkline";
+import { Sparkline } from "@shoal/ui/components/Sparkline";
 import { Button } from "@shoal/ui/components/button";
 import {
 	Dialog,

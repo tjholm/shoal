@@ -119,20 +119,6 @@ export function Body({ children }: { children: ReactNode }) {
 	return <div className="flex min-h-0 flex-1 flex-col gap-[22px] overflow-y-auto px-[30px] py-[26px]">{children}</div>;
 }
 
-export function Sparkline({ samples, tone }: { samples: ReadonlyArray<number>; tone: Tone }) {
-	const width = 220;
-	const height = 18;
-	if (samples.length < 2) return <svg width={width} height={height} aria-hidden="true" />;
-	const max = Math.max(...samples, 1);
-	const step = width / (samples.length - 1);
-	const points = samples.map((v, i) => `${i * step},${height - 2 - (v / max) * (height - 4)}`).join(" ");
-	return (
-		<svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} fill="none" aria-hidden="true">
-			<polyline points={points} stroke={TONE_COLOR[tone]} strokeWidth="1.5" strokeLinejoin="round" />
-		</svg>
-	);
-}
-
 /** The current time, updated every `intervalMs`, for running clocks. */
 export const useNow = (intervalMs = 1000) => {
 	const [now, setNow] = useState(Date.now);

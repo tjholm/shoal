@@ -1,3 +1,9 @@
+const TONE = {
+	lumen: { strong: "bg-lumen", soft: "bg-lumen/35" },
+	amber: { strong: "bg-amber", soft: "bg-amber/35" },
+	coral: { strong: "bg-coral", soft: "bg-coral/35" },
+};
+
 /** Tiny bar chart: the latest bar at full strength, the rest at 35%. Empty
  *  buckets keep a sliver so the baseline reads. */
 export function Sparkline({
@@ -7,11 +13,10 @@ export function Sparkline({
 }: {
 	values: ReadonlyArray<number>;
 	height?: number;
-	tone?: "lumen" | "coral";
+	tone?: keyof typeof TONE;
 }) {
 	const max = Math.max(1, ...values);
-	const strong = tone === "lumen" ? "bg-lumen" : "bg-coral";
-	const soft = tone === "lumen" ? "bg-lumen/35" : "bg-coral/35";
+	const { strong, soft } = TONE[tone];
 	return (
 		<span aria-hidden="true" className="flex items-end gap-0.5" style={{ height }}>
 			{values.map((value, i) => (
