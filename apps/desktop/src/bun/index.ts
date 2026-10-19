@@ -138,13 +138,20 @@ const workerState = (): WorkerState => {
 
 // A template image lets macOS tint the icon to suit the menu bar.
 const MAC_TEMPLATE_ICON = process.platform === "darwin";
+// The Windows tray loads only .ico files.
+const TRAY_EXTENSION = process.platform === "win32" ? "ico" : "svg";
 const trayImage = (accepting: boolean) => {
 	const state = accepting ? "sharing" : "paused";
-	return MAC_TEMPLATE_ICON ? `views://assets/tray-template-${state}.svg` : `views://assets/tray-${state}.svg`;
+	return MAC_TEMPLATE_ICON
+		? `views://assets/tray-template-${state}.svg`
+		: `views://assets/tray-${state}.${TRAY_EXTENSION}`;
 };
 const tray = MAC_TEMPLATE_ICON
 	? new Tray({ image: trayImage(false), template: true, width: 18, height: 18 })
-	: new Tray({ image: trayImage(false), template: false });
+	: process.platform === "win32"
+		? // The 32px image, which Windows scales down to fit the tray at any display scaling.
+			new Tray({ image: trayImage(false), template: false, width: 32, height: 32 })
+		: new Tray({ image: trayImage(false), template: false });
 // Tray swallows native failures and leaves id at 0; without a tray there is
 // no way to control or quit the app.
 if (tray.id === 0) {

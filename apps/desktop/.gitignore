@@ -6,3 +6,5 @@ artifacts/
 *.tsbuildinfo
 .cottontail-tmp/
 assets/icon.iconset/
+assets/*.ico
+assets/icon.png

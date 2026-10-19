@@ -29,6 +29,9 @@ export default {
 			"assets/tray-paused.svg": "views/assets/tray-paused.svg",
 			"assets/tray-template-sharing.svg": "views/assets/tray-template-sharing.svg",
 			"assets/tray-template-paused.svg": "views/assets/tray-template-paused.svg",
+			// The Windows tray loads only .ico files; scripts/icon.ts renders them.
+			"assets/tray-sharing.ico": "views/assets/tray-sharing.ico",
+			"assets/tray-paused.ico": "views/assets/tray-paused.ico",
 		},
 		// In dev:hmr, Vite's dev server serves the window instead.
 		watchIgnore: ["dist/**"],
@@ -39,9 +42,13 @@ export default {
 		},
 		linux: {
 			bundleCEF: false,
+			// Rendered from assets/icon.svg.
+			icon: "assets/icon.png",
 		},
 		win: {
 			bundleCEF: false,
+			// Rendered from assets/icon.svg.
+			icon: "assets/icon.ico",
 		},
 	},
 } satisfies ElectrobunConfig;
