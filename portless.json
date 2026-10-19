@@ -11,6 +11,11 @@
       "proxy": false,
       "_comment": "Skip CLI from `bun run dev` auto-discovery — its TLS+timing semantics differ from the HTTP apps. Run it separately with `bun run dev:cli`.",
       "script": "_skip"
+    },
+    "apps/desktop": {
+      "proxy": false,
+      "_comment": "Skip desktop from `bun run dev` auto-discovery — it's a native app, not an HTTP service. Run it separately with `bun run dev:desktop`.",
+      "script": "_skip"
     }
   }
 }
