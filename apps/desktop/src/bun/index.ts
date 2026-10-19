@@ -8,7 +8,7 @@ import {
 	validateSettings,
 } from "@shoal/client-core/settings";
 import type { WorkerSnapshot } from "@shoal/client-core/worker";
-import { BrowserView, BrowserWindow, Tray, Updater, Utils } from "electrobun/main";
+import { ApplicationMenu, BrowserView, BrowserWindow, Tray, Updater, Utils } from "electrobun/main";
 import { elapsed, isPaused, rate, statusLabel } from "../shared/format";
 import type { BackendState, ShoalRPC, WorkerState } from "../shared/rpc";
 import { isLaunchAtLogin, setLaunchAtLogin } from "./login";
@@ -151,6 +151,33 @@ if (tray.id === 0) {
 	throw new Error(
 		"Could not create a system tray icon. Your desktop needs a StatusNotifierItem host (on GNOME, the AppIndicator extension).",
 	);
+}
+
+// macOS routes Cmd+C/V/X/A/Z through the main menu; without an Edit menu the
+// window's text fields can't copy or paste.
+if (process.platform === "darwin") {
+	ApplicationMenu.setApplicationMenu([
+		{
+			label: "Shoal",
+			submenu: [{ role: "hide" }, { role: "hideOthers" }, { role: "showAll" }],
+		},
+		{
+			label: "Edit",
+			submenu: [
+				{ role: "undo" },
+				{ role: "redo" },
+				{ type: "separator" },
+				{ role: "cut" },
+				{ role: "copy" },
+				{ role: "paste" },
+				{ role: "selectAll" },
+			],
+		},
+		{
+			label: "Window",
+			submenu: [{ role: "minimize" }, { role: "close" }],
+		},
+	]);
 }
 
 /** The menu's second line: what's running, or how long a pause has left. */
