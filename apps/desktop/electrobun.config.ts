@@ -27,6 +27,8 @@ export default {
 			"dist/assets": "views/mainview/assets",
 			"assets/tray-sharing.svg": "views/assets/tray-sharing.svg",
 			"assets/tray-paused.svg": "views/assets/tray-paused.svg",
+			"assets/tray-template-sharing.svg": "views/assets/tray-template-sharing.svg",
+			"assets/tray-template-paused.svg": "views/assets/tray-template-paused.svg",
 		},
 		// In dev:hmr, Vite's dev server serves the window instead.
 		watchIgnore: ["dist/**"],

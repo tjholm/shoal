@@ -136,7 +136,15 @@ const workerState = (): WorkerState => {
 	};
 };
 
-const tray = new Tray({ image: "views://assets/tray-paused.svg", template: false });
+// A template image lets macOS tint the icon to suit the menu bar.
+const MAC_TEMPLATE_ICON = process.platform === "darwin";
+const trayImage = (accepting: boolean) => {
+	const state = accepting ? "sharing" : "paused";
+	return MAC_TEMPLATE_ICON ? `views://assets/tray-template-${state}.svg` : `views://assets/tray-${state}.svg`;
+};
+const tray = MAC_TEMPLATE_ICON
+	? new Tray({ image: trayImage(false), template: true, width: 18, height: 18 })
+	: new Tray({ image: trayImage(false), template: false });
 // Tray swallows native failures and leaves id at 0; without a tray there is
 // no way to control or quit the app.
 if (tray.id === 0) {
@@ -209,7 +217,18 @@ const renderTray = (state: WorkerState) => {
 	shownMenu = shown;
 	shownShape = shape;
 	trayShownAt = Date.now();
-	tray.setImage(accepting ? "views://assets/tray-sharing.svg" : "views://assets/tray-paused.svg");
+	const image = trayImage(accepting);
+	if (image !== tray.image) {
+		if (MAC_TEMPLATE_ICON) {
+			// On macOS setImage drops the template flag and size, but re-showing a
+			// hidden tray rebuilds it from the stored image, flag and size.
+			tray.setVisible(false);
+			tray.setImage(image);
+			tray.setVisible(true);
+		} else {
+			tray.setImage(image);
+		}
+	}
 	tray.setMenu(trayMenu(state, detail));
 };
 
