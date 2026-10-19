@@ -10,6 +10,7 @@ import { useLiveQuery } from "@tanstack/react-db";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { Fragment, useState } from "react";
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { ChevronIcon } from "../../components/icons";
 import { Fact, Page, Section } from "@shoal/ui/components/Page";
 import { Segmented } from "@shoal/ui/components/Segmented";
@@ -366,25 +367,22 @@ function Leaderboard({
 
 const TREND_COLORS = ["var(--signal-lumen)", "var(--signal-current)", "var(--signal-amber)"];
 const OTHER_COLOR = "var(--line-strong)";
-const CHART = { width: 700, height: 190, left: 40, base: 160, plot: 150 };
+const TREND_HEIGHT = 190;
+/** Above this many buckets (24h's hours), label every third to keep the axis legible. */
+const MAX_LABELLED_BUCKETS = 14;
 
-/** Requests per bucket, stacked by model: the busiest few, then the rest. */
 function Trend({ report }: { report: ModelStatsReport }) {
 	const { starts, models } = report.series;
 	const named = models.slice(0, TREND_MODELS);
 	const rest = models.slice(TREND_MODELS);
+	// Positional keys: Recharts reads a string dataKey as a lodash path, so a
+	// model id containing "." would not resolve.
 	const layers = [
-		...named.map((m, i) => ({
-			// Prefixed, so a model named "other" can't collide with the rest.
-			id: `model:${m.model}`,
-			label: m.model,
-			color: TREND_COLORS[i],
-			jobs: m.jobs,
-		})),
+		...named.map((m, i) => ({ key: `model${i}`, label: m.model, color: TREND_COLORS[i], jobs: m.jobs })),
 		...(rest.length > 0
 			? [
 					{
-						id: "rest",
+						key: "rest",
 						label: "other",
 						color: OTHER_COLOR,
 						jobs: starts.map((_, i) => rest.reduce((sum, m) => sum + (m.jobs[i] ?? 0), 0)),
@@ -392,13 +390,11 @@ function Trend({ report }: { report: ModelStatsReport }) {
 				]
 			: []),
 	];
-	const totals = starts.map((_, i) => layers.reduce((sum, l) => sum + (l.jobs[i] ?? 0), 0));
-	// At least 3, so the thirds land on whole requests.
-	const top = niceCeiling(Math.max(3, ...totals));
-	const slot = (CHART.width - CHART.left - 10) / starts.length;
-	const barWidth = Math.min(46, slot * 0.7);
+	const rows = starts.map((start, i) => ({
+		label: bucketLabel(start, report.range),
+		...Object.fromEntries(layers.map((layer) => [layer.key, layer.jobs[i] ?? 0])),
+	}));
 	const hourly = report.range === "24h";
-	const ticks = [0, top / 3, (top * 2) / 3, top];
 
 	return (
 		<Section
@@ -406,71 +402,55 @@ function Trend({ report }: { report: ModelStatsReport }) {
 			caption={hourly ? "Busiest models, stacked" : "Busiest models, stacked, by UTC day"}
 		>
 			<div className="flex flex-col gap-3 px-[18px] pt-3.5 pb-4">
-				<svg
-					viewBox={`0 0 ${CHART.width} ${CHART.height}`}
-					role="img"
-					aria-label="Requests over time, stacked by model"
-					className="h-auto w-full"
-				>
-					<g className="fill-silt font-mono text-[10px]">
-						{ticks.map((tick) => {
-							const y = CHART.base - (tick / top) * CHART.plot;
-							return (
-								<Fragment key={tick}>
-									<line
-										x1={CHART.left}
-										x2={CHART.width - 10}
-										y1={y}
-										y2={y}
-										stroke={tick === 0 ? "var(--line)" : "var(--depth-reef)"}
-									/>
-									<text x={CHART.left - 8} y={y + 3} textAnchor="end">
-										{formatNumber(tick)}
-									</text>
-								</Fragment>
-							);
-						})}
-					</g>
-					{starts.map((start, i) => {
-						const x = CHART.left + i * slot + (slot - barWidth) / 2;
-						let y = CHART.base;
-						return (
-							<g key={start}>
-								{layers.map((layer) => {
-									const value = layer.jobs[i] ?? 0;
-									const h = (value / top) * CHART.plot;
-									y -= h;
-									return value > 0 ? (
-										<rect
-											key={layer.id}
-											x={x}
-											y={y}
-											width={barWidth}
-											height={Math.max(h - 1, 0.5)}
-											rx={1.5}
-											fill={layer.color}
-										>
-											<title>{`${bucketLabel(start, report.range)} · ${layer.label}: ${formatCount(value)}`}</title>
-										</rect>
-									) : null;
-								})}
-								{showBucketLabel(i, starts.length) && (
-									<text
-										x={x + barWidth / 2}
-										y={CHART.base + 16}
-										textAnchor="middle"
-										className="fill-silt font-mono text-[10px]"
-									>
-										{bucketLabel(start, report.range)}
-									</text>
-								)}
-							</g>
-						);
-					})}
-				</svg>
+				<ResponsiveContainer width="100%" height={TREND_HEIGHT}>
+					<BarChart data={rows} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+						<CartesianGrid stroke="var(--depth-reef)" vertical={false} />
+						<XAxis
+							dataKey="label"
+							stroke="var(--line)"
+							tick={{ fill: "var(--color-silt)" }}
+							fontFamily="var(--font-mono)"
+							fontSize={10}
+							tickLine={false}
+							interval={starts.length <= MAX_LABELLED_BUCKETS ? 0 : 2}
+						/>
+						<YAxis
+							stroke="var(--color-silt)"
+							fontFamily="var(--font-mono)"
+							fontSize={10}
+							tickLine={false}
+							axisLine={false}
+							allowDecimals={false}
+							width={40}
+							tickFormatter={(v: number) => formatNumber(v)}
+						/>
+						<Tooltip
+							cursor={{ fill: "var(--depth-reef)" }}
+							contentStyle={{
+								background: "var(--surface-strong)",
+								border: "1px solid var(--line-strong)",
+								fontFamily: "var(--font-mono)",
+								borderRadius: 4,
+								fontSize: 12,
+							}}
+							formatter={(value) => formatCount(Number(value))}
+							labelStyle={{ color: "var(--color-silt)" }}
+						/>
+						{layers.map((layer) => (
+							<Bar
+								key={layer.key}
+								dataKey={layer.key}
+								name={layer.label}
+								stackId="jobs"
+								fill={layer.color}
+								maxBarSize={46}
+							/>
+						))}
+					</BarChart>
+				</ResponsiveContainer>
 				<div className="flex flex-wrap gap-x-3.5 gap-y-1.5 font-mono text-[11.5px] text-mist">
 					{layers.map((layer) => (
-						<span key={layer.id} className="inline-flex items-center gap-1.5">
+						<span key={layer.key} className="inline-flex items-center gap-1.5">
 							<span
 								aria-hidden="true"
 								className="size-[9px] rounded-[2px]"
@@ -485,11 +465,6 @@ function Trend({ report }: { report: ModelStatsReport }) {
 	);
 }
 
-/** Every bucket up to two weeks; every third of 24 hours. */
-function showBucketLabel(i: number, count: number): boolean {
-	return count <= 14 || i % 3 === 0;
-}
-
 /** Hours in local time; days are UTC days, as the server buckets them. */
 function bucketLabel(start: number, range: UsageRange): string {
 	const date = new Date(start);
@@ -500,15 +475,6 @@ function bucketLabel(start: number, range: UsageRange): string {
 			? { timeZone: "UTC", weekday: "short" }
 			: { timeZone: "UTC", month: "short", day: "numeric" },
 	);
-}
-
-/** A round axis maximum at or above `n`, 1, 2 or 5 times a power of ten for
- *  each third. */
-function niceCeiling(n: number): number {
-	const step = n / 3;
-	const magnitude = 10 ** Math.floor(Math.log10(step));
-	const nice = [1, 2, 5, 10].map((m) => m * magnitude).find((m) => m >= step) ?? 10 * magnitude;
-	return nice * 3;
 }
 
 type TruncationLevel = "ok" | "warn" | "bad";
