@@ -3,11 +3,11 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"dev": "electrobun prepare && vite build && electrobun dev --watch",
-		"start": "electrobun prepare && vite build && electrobun dev",
+		"dev": "electrobun prepare && bun scripts/icon.ts && vite build && electrobun dev --watch",
+		"start": "electrobun prepare && bun scripts/icon.ts && vite build && electrobun dev",
 		"dev:hmr": "concurrently \"bun run hmr\" \"bun run start\"",
 		"hmr": "electrobun prepare && vite",
-		"build": "electrobun prepare && vite build && electrobun build --env=stable"
+		"build": "electrobun prepare && bun scripts/icon.ts && vite build && electrobun build --env=stable"
 	},
 	"dependencies": {
 		"@effect/platform-bun": "4.0.3",
@@ -20,6 +20,7 @@
 		"react-dom": "^19.2.0"
 	},
 	"devDependencies": {
+		"@resvg/resvg-js": "^2.6.2",
 		"@tailwindcss/vite": "^4.1.18",
 		"@types/react": "^19.2.0",
 		"@types/react-dom": "^19.2.0",

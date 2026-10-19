@@ -34,6 +34,8 @@ export default {
 		watchIgnore: ["dist/**"],
 		mac: {
 			bundleCEF: false,
+			// Rendered from assets/icon.svg.
+			icons: "assets/icon.iconset",
 		},
 		linux: {
 			bundleCEF: false,
