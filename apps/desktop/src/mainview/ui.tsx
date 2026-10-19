@@ -1,7 +1,7 @@
 import type { BackendDialect } from "@shoal/client-core/inference";
 import type { WorkerModel } from "@shoal/protocol";
 import { type ReactNode, useEffect, useState } from "react";
-import type { JobTask } from "../shared/rpc";
+import type { JobTask, WorkerState } from "../shared/rpc";
 
 export type Tone = "lumen" | "amber" | "coral" | "current" | "silt";
 
@@ -52,6 +52,32 @@ export function Chip({ tone, children }: { tone: Tone; children: ReactNode }) {
 }
 
 /** A status light: filled for active, a hollow ring for idle. */
+/** The colour that goes with the worker's status, wherever it's shown. */
+export const statusTone = (status: WorkerState["status"]): Tone => {
+	switch (status) {
+		case "online":
+			return "lumen";
+		case "stopped":
+			return "coral";
+		case "connecting":
+		case "reconnecting":
+			return "amber";
+		default:
+			return "silt";
+	}
+};
+
+/** One word or two for the worker's status, where there's no room for the full line. */
+export const STATUS_WORD: Record<WorkerState["status"], string> = {
+	online: "Connected",
+	paused: "Paused",
+	off: "Off",
+	stopped: "Stopped",
+	connecting: "Connecting…",
+	reconnecting: "Reconnecting…",
+	"not-configured": "Not set up",
+};
+
 export function Dot({ tone, hollow = false }: { tone: Tone; hollow?: boolean }) {
 	return hollow ? (
 		<span className="size-2 shrink-0 rounded-full border-[1.5px] border-line-strong" />

@@ -9,9 +9,9 @@ import {
 	Card,
 	Chip,
 	Dot,
+	statusTone,
 	describeModel,
 	Empty,
-	hostOf,
 	Row,
 	SectionTitle,
 	Sparkline,
@@ -84,10 +84,10 @@ function Banner({
 	onChoose: () => void;
 }) {
 	const online = state.status === "online";
-	const tone: Tone = online ? "lumen" : state.status === "stopped" ? "coral" : state.status === "connecting" || state.status === "reconnecting" ? "amber" : "silt";
+	const tone = statusTone(state.status);
 	const title = online ? "Accepting work" : statusLabel(state);
 	const detail = online
-		? `Connected to ${hostOf(state.serverUrl)} for ${elapsed(now - (state.onlineSince ?? now))} · ${state.jobs.length} of ${state.concurrency} slots busy`
+		? `Connected for ${elapsed(now - (state.onlineSince ?? now))} · ${state.jobs.length} of ${state.concurrency} slots busy`
 		: state.detail;
 	const segment = (label: string, active: boolean, onClick: () => void) => (
 		<button
