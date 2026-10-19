@@ -131,33 +131,18 @@ jobs:
     defaults:
       run:
         shell: bash
-    env:
-      # Keep in step with hutchVersion in flake.nix.
-      HUTCH_VERSION: 0.27.1
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
 
-      - name: Install Hutch
-        if: runner.os != 'Windows'
-        run: |
-          curl -fsSL https://hutch.blackboard.sh/hutch/install.sh | sh -s -- --version "$HUTCH_VERSION" --no-modify-path
-          echo "$HOME/.hutch/bin" >> "$GITHUB_PATH"
-      - name: Install Hutch
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          & ([scriptblock]::Create((irm https://hutch.blackboard.sh/hutch/install.ps1))) -Version $env:HUTCH_VERSION -NoModifyPath
-          Join-Path $HOME ".hutch\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
-
       - run: bun install --frozen-lockfile
 
       - name: Build
         working-directory: apps/desktop
         # v1.2.3 -> 1.2.3, matching the CLI's version.
-        run: SHOAL_VERSION="${GITHUB_REF_NAME#v}" hutch run build
+        run: SHOAL_VERSION="${GITHUB_REF_NAME#v}" bun run build
 
       - name: Upload to the draft release
         run: gh release upload "$GITHUB_REF_NAME" apps/desktop/artifacts/* --clobber

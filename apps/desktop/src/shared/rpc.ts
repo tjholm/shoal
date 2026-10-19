@@ -72,8 +72,6 @@ export interface LoadedModel {
 	readonly id: string;
 }
 
-export type Page = "overview" | "models" | "activity" | "settings";
-
 export type ShoalRPC = {
 	bun: RPCSchema<{
 		requests: {
@@ -85,14 +83,11 @@ export type ShoalRPC = {
 			detectBackends: { params: void; response: ReadonlyArray<BackendState> };
 			/** Resolves to an error message when something couldn't be unloaded. */
 			unloadModel: { params: LoadedModel; response: string | null };
-			openWebDashboard: { params: void; response: void };
-			takeRequestedPage: { params: void; response: Page };
 		};
 	}>;
 	webview: RPCSchema<{
 		messages: {
 			stateChanged: WorkerState;
-			showPage: Page;
 		};
 	}>;
 };

@@ -31,8 +31,6 @@ const SettingsFile = Schema.Struct({
 	name: Schema.optionalKey(Schema.String),
 	concurrency: Schema.optionalKey(Schema.Number),
 	availability: Schema.optionalKey(Availability),
-	/** Written by earlier versions; moved to the credential store on load. */
-	token: Schema.optionalKey(Schema.String),
 });
 const SettingsJson = Schema.fromJsonString(SettingsFile);
 
@@ -68,18 +66,13 @@ export const loadSettings = async (): Promise<Settings | null> => {
 			{ cause: error },
 		);
 	}
-	const settings: Settings = {
+	return {
 		serverUrl: file.serverUrl,
 		backends: file.backends,
 		name: file.name ?? "",
 		concurrency: file.concurrency ?? 1,
 		availability: file.availability ?? "on",
 	};
-	if (file.token !== undefined) {
-		await saveToken(settings.serverUrl, file.token);
-		await saveSettings(settings);
-	}
-	return settings;
 };
 
 export const saveSettings = async (settings: Settings) => {

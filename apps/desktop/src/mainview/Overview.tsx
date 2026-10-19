@@ -1,7 +1,7 @@
 import { FitNumber } from "@shoal/ui/components/FitNumber";
 import { TextMorph } from "@shoal/ui/components/TextMorph";
 import { type ReactNode, useRef, useState } from "react";
-import { count, elapsed, isPaused, statusLabel } from "../shared/format";
+import { elapsed, isPaused, statusLabel } from "../shared/format";
 import type { Availability, RunningJob, WorkerState } from "../shared/rpc";
 import { rpc } from "./rpc";
 import {
@@ -202,8 +202,8 @@ function Running({
 									</div>
 									{job.task === "chat" && <Sparkline samples={samples} tone={tone} />}
 								</div>
-								<span className="w-[110px] flex-none font-mono text-[13px] text-mist">
-									<TextMorph as="span">{count(job.tokens)}</TextMorph> tokens
+								<span className="flex w-[110px] flex-none gap-1 font-mono text-[13px] text-mist">
+									<FitNumber value={job.tokens} className="flex-1 text-right" /> tokens
 								</span>
 								<span className="w-[100px] flex-none font-mono text-[13px]" style={{ color: TONE_COLOR[tone] }}>
 									{speed === null ? "–" : <TextMorph as="span">{`${speed.toFixed(1)} tok/s`}</TextMorph>}

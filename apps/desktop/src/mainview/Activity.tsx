@@ -1,4 +1,5 @@
-import { clock, count, elapsed } from "../shared/format";
+import { FitNumber } from "@shoal/ui/components/FitNumber";
+import { clock, elapsed } from "../shared/format";
 import type { FinishedJob, WorkerState } from "../shared/rpc";
 import { Body, Card, Chip, Dot, Empty, PageTitle, Row, TASK_NAME, type Tone } from "./ui";
 
@@ -36,7 +37,9 @@ export function Activity({ state }: { state: WorkerState }) {
 									</div>
 									{job.outcome._tag === "Failed" && <span className="text-xs text-mist">{job.outcome.message}</span>}
 								</div>
-								<span className="w-[100px] flex-none font-mono text-[13px] text-mist">{count(job.tokens)} tokens</span>
+								<span className="flex w-[100px] flex-none gap-1 font-mono text-[13px] text-mist">
+									<FitNumber value={job.tokens} className="flex-1 text-right" /> tokens
+								</span>
 								<span className="w-16 flex-none font-mono text-[13px] text-silt">{elapsed(job.durationMs)}</span>
 								<span className="w-[110px] flex-none text-right font-mono text-[13px] text-silt">{clock(job.endedAt)}</span>
 							</Row>

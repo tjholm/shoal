@@ -10,7 +10,7 @@ import {
 import type { WorkerSnapshot } from "@shoal/client-core/worker";
 import { BrowserView, BrowserWindow, Tray, Updater, Utils } from "electrobun/main";
 import { elapsed, isPaused, rate, statusLabel } from "../shared/format";
-import type { BackendState, Page, ShoalRPC, WorkerState } from "../shared/rpc";
+import type { BackendState, ShoalRPC, WorkerState } from "../shared/rpc";
 import { isLaunchAtLogin, setLaunchAtLogin } from "./login";
 import { claimSingleInstance } from "./single-instance";
 import { probeBackends, type RunningWorker, startWorker, toBackendState } from "./worker";
@@ -36,7 +36,7 @@ const EXTENSIONS = [
 ] as const;
 const MINUTE = 60_000;
 
-// Vite's dev server (vite.config.ts); serves the window with hot reload in `hutch run dev:hmr`.
+// Vite's dev server (vite.config.ts); serves the window with hot reload in `bun run dev:hmr`.
 const DEV_SERVER_URL = "http://localhost:5173";
 
 const resolveWindowUrl = async () => {
@@ -53,12 +53,9 @@ const resolveWindowUrl = async () => {
 const windowUrl = await resolveWindowUrl();
 
 let window: { win: BrowserWindow; rpc: ReturnType<typeof createRpc> } | null = null;
-let requestedPage: Page = "overview";
 
-const openWindow = (page: Page) => {
-	requestedPage = page;
+const openWindow = () => {
 	if (window) {
-		window.rpc.send.showPage(page);
 		window.win.show();
 		window.win.activate();
 		return;
@@ -76,7 +73,7 @@ const openWindow = (page: Page) => {
 	window = { win, rpc };
 };
 
-if (!(await claimSingleInstance(() => openWindow("overview")))) process.exit(0);
+if (!(await claimSingleInstance(openWindow))) process.exit(0);
 
 let settings: Settings | null = await loadSettings();
 let token: string | null = settings && (await loadToken(settings.serverUrl));
@@ -293,7 +290,7 @@ tray.on("tray-clicked", (event) => {
 		case "stay-off":
 			return setAvailability("off");
 		case "open":
-			return openWindow("overview");
+			return openWindow();
 		case "dashboard":
 			if (settings) Utils.openExternal(settings.serverUrl);
 			return;
@@ -339,10 +336,6 @@ function createRpc() {
 				detectBackends: () => probeBackends(LOCAL_BACKENDS),
 				unloadModel: async (model) =>
 					(await worker?.unload(model.backend, model.id)) ?? "Shoal isn't running.",
-				openWebDashboard: () => {
-					if (settings) Utils.openExternal(settings.serverUrl);
-				},
-				takeRequestedPage: () => requestedPage,
 			},
 		},
 	});
@@ -351,4 +344,4 @@ function createRpc() {
 const saved = settings?.availability;
 if (saved !== undefined && isPaused(saved)) await setAvailability(availability());
 await restartWorker();
-if (settings === null || token === null) openWindow("overview");
+if (settings === null || token === null) openWindow();

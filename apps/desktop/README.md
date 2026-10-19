@@ -14,10 +14,6 @@ bun run dev:hmr # same, with the window served by Vite (hot reload)
 bun run build   # stable release build for this OS
 ```
 
-With [Hutch](https://framework.blackboard.sh/electrobun/guides/hutch/) installed
-(it comes with the repo's `nix develop`), `hutch run install`, `hutch run dev`,
-`hutch run dev:hmr` and `hutch run build` do the same.
-
 The window (`src/mainview`) is React on Vite, styled with the shared design
 system in `@shoal/ui` (`packages/ui`), the same one the dashboard uses.
 

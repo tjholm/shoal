@@ -13,15 +13,6 @@ export const elapsed = (ms: number) => {
 export const clock = (epochMs: number) =>
 	new Date(epochMs).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 
-/** "148", "12.4k", "312k", "1.2M". */
-export const count = (n: number) => {
-	const short = (value: number, unit: string) =>
-		`${value < 100 ? value.toFixed(1).replace(/\.0$/, "") : Math.round(value)}${unit}`;
-	if (n < 1000) return String(n);
-	if (n < 1_000_000) return short(n / 1000, "k");
-	return short(n / 1_000_000, "M");
-};
-
 /** "41.2 tok/s", or null before a second has passed. */
 export const rate = (tokens: number, ms: number) =>
 	ms < 1000 ? null : `${(tokens / (ms / 1000)).toFixed(1)} tok/s`;

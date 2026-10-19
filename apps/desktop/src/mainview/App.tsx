@@ -1,14 +1,16 @@
 import { ShoalGlyph } from "@shoal/ui/components/ShoalMark";
 import { Activity as ActivityIcon, Box, LayoutGrid, Settings as SettingsIcon } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
-import type { Page, WorkerState } from "../shared/rpc";
+import type { WorkerState } from "../shared/rpc";
 import { Activity } from "./Activity";
 import { Models } from "./Models";
 import { Overview } from "./Overview";
-import { onShowPage, onStateChanged, rpc } from "./rpc";
+import { onStateChanged, rpc } from "./rpc";
 import { Settings } from "./Settings";
 import { Setup } from "./Setup";
 import { hostOf } from "./ui";
+
+type Page = "overview" | "models" | "activity" | "settings";
 
 export function App() {
 	const [state, setState] = useState<WorkerState | null>(null);
@@ -16,13 +18,8 @@ export function App() {
 
 	useEffect(() => {
 		const offState = onStateChanged(setState);
-		const offPage = onShowPage(setPage);
 		void rpc.request.getState().then(setState);
-		void rpc.request.takeRequestedPage().then(setPage);
-		return () => {
-			offState();
-			offPage();
-		};
+		return offState;
 	}, []);
 
 	if (state === null) return null;

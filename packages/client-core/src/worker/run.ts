@@ -27,7 +27,7 @@ import {
 	type RefreshResult,
 } from "../inference";
 import type { BackendError } from "../inference/errors";
-import { canUnload, type UnloadUnsupported } from "../inference/models";
+import type { UnloadUnsupported } from "../inference/models";
 
 const STATS_INTERVAL = Duration.seconds(10);
 const INITIAL_RECONNECT_DELAY = Duration.seconds(1);
@@ -113,7 +113,6 @@ export interface WorkerSnapshot {
 
 /** A running worker, for clients that control it while it runs. */
 export interface Worker {
-	readonly snapshot: Effect.Effect<WorkerSnapshot>;
 	/** The current snapshot, then every change. */
 	readonly changes: Stream.Stream<WorkerSnapshot>;
 	/** Disconnect at once, abandoning running jobs. */
@@ -123,9 +122,6 @@ export interface Worker {
 		backendUrl: string,
 		model: string,
 	): Effect.Effect<void, BackendError | UnloadUnsupported>;
-	/** Pause, then unload every resident model. Backends that can't unload
-	 *  are skipped; the first failure is reported after trying the rest. */
-	readonly freeMemory: Effect.Effect<void, BackendError | UnloadUnsupported>;
 	/** Fails when the worker stops for good: rejected credentials or an
 	 *  unusable identity file. */
 	readonly join: Effect.Effect<never, CredentialsRejected | IdentityFileError>;
@@ -531,28 +527,11 @@ export const makeWorker = Effect.fn("makeWorker")(function* (
 	const unload = (backendUrl: string, model: string) =>
 		client.unload(backendUrl, model).pipe(Effect.andThen(probe));
 
-	const freeMemory = Effect.gen(function* () {
-		yield* SubscriptionRef.set(paused, true);
-		const { backends } = yield* probe;
-		const results = yield* Effect.forEach(
-			backends
-				.filter((b) => b.dialect !== undefined && canUnload(b.dialect))
-				.flatMap((b) => b.loaded.map((model) => ({ url: b.url, model }))),
-			({ url, model }) => client.unload(url, model).pipe(Effect.flip, Effect.option),
-			{ concurrency: "unbounded" },
-		);
-		yield* probe;
-		const failure = results.find(Option.isSome);
-		if (failure) return yield* failure.value;
-	});
-
 	return {
-		snapshot: SubscriptionRef.get(snapshot),
 		changes: SubscriptionRef.changes(snapshot),
 		pause: SubscriptionRef.set(paused, true),
 		resume: SubscriptionRef.set(paused, false),
 		unload,
-		freeMemory,
 		join: Fiber.join(running),
 	} satisfies Worker;
 });
