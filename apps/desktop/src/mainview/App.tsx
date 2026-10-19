@@ -8,7 +8,7 @@ import { Overview } from "./Overview";
 import { onStateChanged, rpc } from "./rpc";
 import { Settings } from "./Settings";
 import { Setup } from "./Setup";
-import { hostOf } from "./ui";
+import { Dot, STATUS_WORD, statusTone } from "./ui";
 
 type Page = "overview" | "models" | "activity" | "settings";
 
@@ -54,9 +54,9 @@ export function App() {
 				{nav("settings", <SettingsIcon size={16} aria-hidden="true" />, "Settings")}
 				<div className="mt-auto flex flex-col gap-[3px] border-t border-line px-2.5 pt-3 pb-1">
 					<div className="text-[13px] font-medium">{state.name || "This computer"}</div>
-					<div className="truncate font-mono text-[11px] text-silt">
-						{hostOf(state.serverUrl)}
-						{state.workerId && ` · ${state.workerId.slice(0, 8)}`}
+					<div className="flex items-center gap-1.5 text-[11px] text-silt">
+						<Dot tone={statusTone(state.status)} />
+						{STATUS_WORD[state.status]}
 					</div>
 				</div>
 			</nav>
