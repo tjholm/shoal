@@ -199,8 +199,11 @@ type MenuItem = Parameters<typeof tray.setMenu>[0][number];
 const item = (label: string, action: string | null, extra: Partial<MenuItem> = {}): MenuItem =>
 	({ type: "normal", label, ...(action ? { action } : {}), ...extra }) as MenuItem;
 const separator: MenuItem = { type: "separator" };
-const durations = (prefix: string, choices: ReadonlyArray<readonly [number, string]>) =>
-	choices.map(([minutes, label]) => item(label, `${prefix}:${minutes}`));
+const durations = (prefix: string, choices: ReadonlyArray<readonly [number, string]>) => [
+	...choices.map(([minutes, label]) => item(label, `${prefix}:${minutes}`)),
+	separator,
+	item("Until I resume", "stay-off"),
+];
 
 const trayMenu = (state: WorkerState, detail: string | null): Array<MenuItem> => {
 	const controls = settings !== null;
@@ -208,7 +211,6 @@ const trayMenu = (state: WorkerState, detail: string | null): Array<MenuItem> =>
 		? [
 				item("Resume now", "resume"),
 				item("Extend pause by", null, { submenu: durations("extend", EXTENSIONS) }),
-				item("Stay off until I resume", "stay-off"),
 			]
 		: [
 				item("Accept work", "accept", { checked: state.availability === "on", enabled: controls }),
