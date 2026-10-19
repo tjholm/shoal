@@ -13,6 +13,7 @@ import { elapsed, isPaused, rate, statusLabel } from "../shared/format";
 import type { BackendState, ShoalRPC, WorkerState } from "../shared/rpc";
 import { isLaunchAtLogin, setLaunchAtLogin } from "./login";
 import { claimSingleInstance } from "./single-instance";
+import { store } from "./store";
 import { probeBackends, type RunningWorker, startWorker, toBackendState } from "./worker";
 
 /** Where local model servers usually listen, probed on first run. */
@@ -75,8 +76,8 @@ const openWindow = () => {
 
 if (!(await claimSingleInstance(openWindow))) process.exit(0);
 
-let settings: Settings | null = await loadSettings();
-let token: string | null = settings && (await loadToken(settings.serverUrl));
+let settings: Settings | null = await loadSettings(store);
+let token: string | null = settings && (await loadToken(store, settings.serverUrl));
 let worker: RunningWorker | null = null;
 let snapshot: WorkerSnapshot | null = null;
 let onlineSince: number | null = null;
@@ -313,7 +314,7 @@ let pauseEnd: ReturnType<typeof setTimeout> | undefined;
 const setAvailability = async (next: Availability) => {
 	if (settings === null) return;
 	settings = { ...settings, availability: next };
-	await saveSettings(settings);
+	await saveSettings(store, settings);
 	clearTimeout(pauseEnd);
 	if (isPaused(next)) {
 		pauseEnd = setTimeout(() => void setAvailability("on"), Math.max(0, next.pausedUntil - Date.now()));
@@ -372,12 +373,12 @@ function createRpc() {
 					const result = validateSettings(form, settings);
 					if ("errors" in result) return { ok: false, errors: result.errors };
 					try {
-						const nextToken = result.token ?? (await loadToken(result.settings.serverUrl));
+						const nextToken = result.token ?? (await loadToken(store, result.settings.serverUrl));
 						if (nextToken === null) {
 							return { ok: false, errors: ["Enter the API key from your shoal dashboard."] };
 						}
-						if (result.token !== null) await saveToken(result.settings.serverUrl, result.token);
-						await saveSettings(result.settings);
+						if (result.token !== null) await saveToken(store, result.settings.serverUrl, result.token);
+						await saveSettings(store, result.settings);
 						if (form.launchAtLogin !== isLaunchAtLogin()) await setLaunchAtLogin(form.launchAtLogin);
 						settings = result.settings;
 						token = nextToken;

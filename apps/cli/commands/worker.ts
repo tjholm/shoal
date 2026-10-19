@@ -1,3 +1,5 @@
+import os from "node:os";
+import path from "node:path";
 import { FetchHttpClient } from "effect/http";
 import { Array as Arr, Config, Effect, Layer, Redacted, Schema } from "effect";
 import { Command, Flag } from "effect/cli";
@@ -67,6 +69,12 @@ const start = Command.make(
 		if (!Arr.isReadonlyArrayNonEmpty(args.backends)) {
 			return yield* new NoBackendsConfigured();
 		}
+		const stateRoot = yield* Config.String("XDG_STATE_HOME").pipe(
+			Config.withDefault(path.join(os.homedir(), ".local", "state")),
+		);
+		const identityDir = yield* Config.String("SHOAL_HOME").pipe(
+			Config.withDefault(path.join(stateRoot, "shoal")),
+		);
 		yield* Effect.log(`using backend(s): ${args.backends.join(", ")}`);
 		yield* runWorker({
 			serverUrl: args.server,
@@ -77,7 +85,7 @@ const start = Command.make(
 			Effect.provide(
 				Layer.mergeAll(
 					InferenceClient.layer(args.backends),
-					IdentityStore.layer(args.server),
+					IdentityStore.layer(identityDir, args.server),
 					Socket.layerWebSocketConstructorGlobal,
 				).pipe(Layer.provide(FetchHttpClient.layer)),
 			),

@@ -8,6 +8,7 @@ import { Array as Arr, Cause, Effect, Exit, Fiber, Layer, Option, Stream } from 
 import { FetchHttpClient } from "effect/http";
 import { Socket } from "effect/socket";
 import type { BackendState } from "../shared/rpc";
+import { store } from "./store";
 
 export const toBackendState = (b: BackendSnapshot): BackendState => ({
 	url: b.url,
@@ -60,7 +61,7 @@ export const startWorker = (
 
 		const layer = Layer.mergeAll(
 			InferenceClient.layer(settings.backends),
-			IdentityStore.layer(serverUrl),
+			IdentityStore.layer(store.dir, serverUrl),
 			Socket.layerWebSocketConstructorGlobal,
 		).pipe(Layer.provide(FetchHttpClient.layer), Layer.provideMerge(BunServices.layer));
 
