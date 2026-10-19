@@ -5,7 +5,8 @@
     },
     "apps/dashboard": {
       "name": "server.shoal",
-      "_comment": "Keeps the pre-split URL: the dashboard proxies /api and /ws to api.shoal, so workers and API clients can keep using server.shoal."
+      "appPort": 3100,
+      "_comment": "Keeps the pre-split URL: the dashboard proxies /api and /ws to api.shoal, so workers and API clients can keep using server.shoal. The fixed port gives clients that can't trust portless's CA (e.g. Jan) a stable http://localhost:3100/v1; it's outside portless's random 4000-4999 range."
     },
     "apps/cli": {
       "proxy": false,
