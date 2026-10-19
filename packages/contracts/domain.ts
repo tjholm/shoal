@@ -189,9 +189,9 @@ export const ActiveJob = Schema.Struct({
 });
 export type ActiveJob = typeof ActiveJob.Type;
 
-/** Events on the `/api/activity/stream` SSE feed, shaped like the worker
- *  feed: a `snapshot` seeds the client, then `upsert`/`delete` events follow
- *  every change. */
+/** The running-jobs feed on `/api/live`, shaped like the workers feed: a
+ *  `snapshot` seeds the client, then `upsert`/`delete` events follow every
+ *  change. */
 export const ActivityEvent = Schema.Union([
 	Schema.Struct({
 		type: Schema.tag("snapshot"),
@@ -204,8 +204,8 @@ export const ActivityEvent = Schema.Union([
 ]);
 export type ActivityEvent = typeof ActivityEvent.Type;
 
-/** Events on the `/api/workers/stream` SSE feed. The SSE event name is the
- *  `type` field; `data` is the JSON payload. */
+/** The workers feed on `/api/live`: a `snapshot` seeds the client, then
+ *  `upsert`/`delete` events follow every change. */
 export const WorkerStreamEvent = Schema.Union([
 	Schema.Struct({ type: Schema.tag("snapshot"), workers: Schema.Array(WorkerInfo) }),
 	Schema.Struct({ type: Schema.tag("upsert"), worker: WorkerInfo }),
@@ -213,3 +213,12 @@ export const WorkerStreamEvent = Schema.Union([
 ]);
 export type WorkerStreamEvent = typeof WorkerStreamEvent.Type;
 
+/** Events on the `/api/live` SSE stream: every live feed on one connection,
+ *  as browsers allow only six per host over plain HTTP. The SSE event name is
+ *  the feed (`type`); `data` is the JSON payload. Each feed starts with a
+ *  snapshot on every connect. */
+export const LiveEvent = Schema.Union([
+	Schema.Struct({ type: Schema.tag("workers"), event: WorkerStreamEvent }),
+	Schema.Struct({ type: Schema.tag("activity"), event: ActivityEvent }),
+]);
+export type LiveEvent = typeof LiveEvent.Type;

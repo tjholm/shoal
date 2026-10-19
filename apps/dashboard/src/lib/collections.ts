@@ -1,39 +1,28 @@
-import {
-	type ActiveJob,
-	ActivityEvent,
-	type WorkerInfo,
-	WorkerStreamEvent,
-} from "@shoal/contracts";
+import type { ActiveJob, ActivityEvent, WorkerInfo, WorkerStreamEvent } from "@shoal/contracts";
 import { createCollection } from "@tanstack/react-db";
 import { useQueryClient } from "@tanstack/react-query";
 import { getRouteApi } from "@tanstack/react-router";
-import { Schema } from "effect";
 import { useEffect } from "react";
 import { api } from "./api";
-
-const decodeEvent = Schema.decodeUnknownSync(Schema.fromJsonString(WorkerStreamEvent));
-const decodeActivity = Schema.decodeUnknownSync(Schema.fromJsonString(ActivityEvent));
+import { createLiveFeed, type LiveFeed } from "./live";
 
 /**
- * Live collection of workers for the active organization. Hydrates from the
- * `/api/workers/stream` SSE endpoint: an initial `snapshot` event seeds the
- * collection, then `upsert`/`delete` events drive incremental updates from
- * the worker registry (connect, disconnect, stats, models, rename).
+ * Live collection of workers for the active organization, from the `workers`
+ * feed: an initial `snapshot` event seeds the collection, then
+ * `upsert`/`delete` events drive incremental updates from the worker registry
+ * (connect, disconnect, stats, models, rename).
  *
  * Mutations are optimistic — `update`/`delete` apply locally and roll back if
  * the server call fails.
  */
-const createWorkersCollection = (session: string) =>
+const createWorkersCollection = (session: string, live: LiveFeed) =>
 	createCollection<WorkerInfo>({
 		id: `workers-${session}`,
 		getKey: (w) => w.workerId,
 		sync: {
 			rowUpdateMode: "full",
 			sync: ({ begin, write, commit, markReady, truncate }) => {
-				const source = new EventSource("/api/workers/stream");
-
-				const apply = (raw: MessageEvent) => {
-					const event = decodeEvent(raw.data);
+				const apply = (event: WorkerStreamEvent) => {
 					begin();
 					switch (event.type) {
 						case "snapshot":
@@ -51,12 +40,7 @@ const createWorkersCollection = (session: string) =>
 					commit();
 					if (event.type === "snapshot") markReady();
 				};
-
-				source.addEventListener("snapshot", apply);
-				source.addEventListener("upsert", apply);
-				source.addEventListener("delete", apply);
-				// EventSource reconnects on its own; the server resends a snapshot.
-				return () => source.close();
+				return live.subscribe("workers", apply);
 			},
 		},
 		onUpdate: async ({ transaction }) => {
@@ -77,11 +61,11 @@ export const jobTokens = (job: ActiveJob): number => job.completionTokens ?? job
 
 /**
  * Live collection of the active organization's running jobs, from the
- * `/api/activity/stream` SSE endpoint: a `snapshot` seeds it, then
+ * `activity` feed: a `snapshot` seeds it, then
  * `upsert`/`delete` events follow the dispatcher. A finished job stays until
  * its usage is recorded, so once it's deleted a usage refetch includes it.
  */
-const createActiveJobsCollection = (session: string) => {
+const createActiveJobsCollection = (session: string, live: LiveFeed) => {
 	let serverClockOffset = 0;
 	return createCollection<ActiveJob>({
 		id: `active-jobs-${session}`,
@@ -93,10 +77,7 @@ const createActiveJobsCollection = (session: string) => {
 		sync: {
 			rowUpdateMode: "full",
 			sync: ({ begin, write, commit, markReady, truncate }) => {
-				const source = new EventSource("/api/activity/stream");
-
-				const apply = (raw: MessageEvent) => {
-					const event = decodeActivity(raw.data);
+				const apply = (event: ActivityEvent) => {
 					begin();
 					switch (event.type) {
 						case "snapshot":
@@ -115,21 +96,20 @@ const createActiveJobsCollection = (session: string) => {
 					commit();
 					if (event.type === "snapshot") markReady();
 				};
-
-				source.addEventListener("snapshot", apply);
-				source.addEventListener("upsert", apply);
-				source.addEventListener("delete", apply);
-				// EventSource reconnects on its own; the server resends a snapshot.
-				return () => source.close();
+				return live.subscribe("activity", apply);
 			},
 		},
 	});
 };
 
-const createSessionCollections = (session: string) => ({
-	workers: createWorkersCollection(session),
-	activeJobs: createActiveJobsCollection(session),
-});
+/** A session's collections, sharing one live connection. */
+const createSessionCollections = (session: string) => {
+	const live = createLiveFeed();
+	return {
+		workers: createWorkersCollection(session, live),
+		activeJobs: createActiveJobsCollection(session, live),
+	};
+};
 
 export type SessionCollections = ReturnType<typeof createSessionCollections>;
 
@@ -137,8 +117,8 @@ const sessions = new Map<string, SessionCollections>();
 
 /**
  * The live collections for a signed-in user's active org, keyed
- * `userId/orgId`. The server reads both once per stream, so each session gets
- * its own instances rather than reusing another's connections.
+ * `userId/orgId`. The server reads the session's org once per connection, so
+ * each session gets its own instances rather than reusing another's.
  */
 export function collectionsFor(session: string): SessionCollections {
 	let collections = sessions.get(session);

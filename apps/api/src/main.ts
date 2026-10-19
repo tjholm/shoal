@@ -7,16 +7,15 @@ import { usagePruning } from "./background";
 import { ShoalConfig } from "./config";
 import { Dispatcher } from "./dispatch";
 import { Email } from "./email";
-import { activityStreamRoutes } from "./http/activity";
 import { authRoutes } from "./http/auth-routes";
 import { dashboardRoutes } from "./http/dashboard";
+import { liveRoutes } from "./http/live";
 import { dashboardAppRoutes } from "./http/static";
 import { anthropicRoutes } from "./inference/anthropic";
 import { openAIRoutes } from "./inference/openai";
 import { Usage } from "./usage";
 import { workerGatewayRoutes } from "./workers/gateway";
 import { WorkerRegistry } from "./workers/registry";
-import { workerStreamRoutes } from "./workers/stream";
 
 const Domain = Dispatcher.layer.pipe(
 	Layer.provideMerge(Layer.mergeAll(WorkerRegistry.layer, Usage.layer)),
@@ -33,8 +32,7 @@ const Routes = Layer.mergeAll(
 	openAIRoutes,
 	anthropicRoutes,
 	workerGatewayRoutes,
-	workerStreamRoutes,
-	activityStreamRoutes,
+	liveRoutes,
 	dashboardAppRoutes,
 );
 
