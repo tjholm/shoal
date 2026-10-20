@@ -25,6 +25,7 @@ export const DIALECT_NAME: Record<BackendDialect, string> = {
 	ollama: "Ollama",
 	lmstudio: "LM Studio",
 	llamacpp: "llama.cpp",
+	"llamacpp-router": "llama.cpp router",
 	llamaswap: "llama-swap",
 	vllm: "vLLM",
 	lemonade: "Lemonade",

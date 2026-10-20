@@ -9,7 +9,14 @@ import {
 	normalizeLemonadeModels,
 	unloadLemonadeModel,
 } from "./lemonade";
-import { normalizeLlamaCppModels, probeLlamaCppServer } from "./llamacpp";
+import {
+	fetchLlamaCppRouterLoadedModels,
+	type LlamaCppRole,
+	normalizeLlamaCppModels,
+	normalizeLlamaCppRouterModels,
+	probeLlamaCppServer,
+	unloadLlamaCppRouterModel,
+} from "./llamacpp";
 import {
 	fetchLlamaSwapLoadedModels,
 	isLlamaSwapResponse,
@@ -39,6 +46,7 @@ export type BackendDialect =
 	| "vllm"
 	| "llamaswap"
 	| "llamacpp"
+	| "llamacpp-router"
 	| "ollama";
 
 /** The backend keeps one model loaded for its whole lifetime (vLLM,
@@ -76,7 +84,7 @@ export class ModelDiscovery extends Context.Service<
 		 *      misidentify it as a plain llama-server and assume "always loaded"
 		 *      for every alias.
 		 *   5. **llama.cpp llama-server** — probes `GET /props` (one extra call
-		 *      per backend, memoized).
+		 *      per backend, memoized); `role: "router"` picks the router dialect.
 		 *   6. **Ollama** — fallback. Probes `POST /api/show` per model, which
 		 *      404s cleanly on non-Ollama OpenAI-compat backends and falls back to
 		 *      bare ids with capabilities undefined.
@@ -130,12 +138,12 @@ export class ModelDiscovery extends Context.Service<
 			// does/doesn't answer Ollama's /api/show, the answer is stable for the
 			// lifetime of the process — re-probing every refresh would just waste
 			// round-trips.
-			const llamaCppDetected = new Map<string, boolean>();
+			const llamaCppDetected = new Map<string, LlamaCppRole | null>();
 			const ollamaShowUnavailable = new Set<string>();
 			// Without this we'd log the same unknown recipe on every refresh.
 			const warnedRecipes = new Set<string>();
 
-			const isLlamaCpp = Effect.fnUntraced(function* (backendUrl: string) {
+			const llamaCppRole = Effect.fnUntraced(function* (backendUrl: string) {
 				const cached = llamaCppDetected.get(backendUrl);
 				if (cached !== undefined) return cached;
 				const detected = yield* probeLlamaCppServer(backendUrl);
@@ -200,7 +208,14 @@ export class ModelDiscovery extends Context.Service<
 						dialect: "llamaswap" as const,
 					};
 				}
-				if (yield* isLlamaCpp(backendUrl)) {
+				const llamaCpp = yield* llamaCppRole(backendUrl);
+				if (llamaCpp === "router") {
+					return {
+						models: normalizeLlamaCppRouterModels(data),
+						dialect: "llamacpp-router" as const,
+					};
+				}
+				if (llamaCpp === "server") {
 					return {
 						models: normalizeLlamaCppModels(data),
 						dialect: "llamacpp" as const,
@@ -252,6 +267,8 @@ const fetchLoadedModels = (
 			return fetchLlamaSwapLoadedModels(backendUrl);
 		case "lemonade":
 			return fetchLemonadeLoadedModels(backendUrl);
+		case "llamacpp-router":
+			return fetchLlamaCppRouterLoadedModels(backendUrl);
 		case "vllm":
 		case "llamacpp":
 			return Effect.succeed(advertised);
@@ -272,6 +289,8 @@ const unloadModel = (
 			return unloadLlamaSwapModel(backendUrl, model);
 		case "lemonade":
 			return unloadLemonadeModel(backendUrl, model);
+		case "llamacpp-router":
+			return unloadLlamaCppRouterModel(backendUrl, model);
 		case "vllm":
 		case "llamacpp":
 			return new UnloadUnsupported({ url: backendUrl, dialect });

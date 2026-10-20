@@ -18,6 +18,8 @@ export const RawModelEntry = Schema.Struct({
 	// vLLM
 	permission: Schema.optionalKey(Schema.Array(Schema.Unknown)),
 	max_model_len: Schema.optionalKey(Schema.Number),
+	// llama-server in router mode
+	status: Schema.optionalKey(Schema.Struct({ value: Schema.String })),
 });
 export type RawModelEntry = typeof RawModelEntry.Type;
 
