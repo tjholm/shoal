@@ -1,6 +1,8 @@
 import { Button } from "@shoal/ui/components/button";
 import { useState } from "react";
+import { LOCAL_MODELS_URL } from "../shared/local-models";
 import type { BackendState, WorkerState } from "../shared/rpc";
+import { LocalModels } from "./LocalModels";
 import { rpc } from "./rpc";
 import { Body, Card, Chip, DIALECT_NAME, Dot, describeModel, Empty, PageTitle, Row } from "./ui";
 
@@ -18,6 +20,7 @@ export function Models({ state }: { state: WorkerState }) {
 				</p>
 			)}
 			{state.backends.length === 0 && <p className="m-0 text-sm text-silt">No backends configured yet.</p>}
+			{state.backends.some((b) => b.url === LOCAL_MODELS_URL) && <LocalModels state={state.localModels} />}
 			{state.backends.map((backend) => {
 				const shadowed = new Set(servedEarlier);
 				for (const model of backend.models) servedEarlier.add(model.id);

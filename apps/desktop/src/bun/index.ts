@@ -10,7 +10,10 @@ import {
 import type { WorkerSnapshot } from "@shoal/client-core/worker";
 import { ApplicationMenu, BrowserView, BrowserWindow, Tray, Updater, Utils } from "electrobun/main";
 import { elapsed, isPaused, rate, statusLabel } from "../shared/format";
-import type { BackendState, ShoalRPC, WorkerState } from "../shared/rpc";
+import { LOCAL_MODELS_URL } from "../shared/local-models";
+import type { BackendState, LocalModelsState, ShoalRPC, WorkerState } from "../shared/rpc";
+import { deleteLocalModel, downloadLocalModel, type LocalModelsServer, listLocalModels, startLocalModels } from "./local-models";
+import { modelQuants, searchModels } from "./huggingface";
 import { isLaunchAtLogin, setLaunchAtLogin } from "./login";
 import { claimSingleInstance } from "./single-instance";
 import { probeBackends, type RunningWorker, startWorker, toBackendState } from "./worker";
@@ -81,6 +84,8 @@ let worker: RunningWorker | null = null;
 let snapshot: WorkerSnapshot | null = null;
 let onlineSince: number | null = null;
 let stoppedReason: string | null = null;
+let localModels: LocalModelsServer | null = null;
+let localModelsState: LocalModelsState = { phase: "off", detail: null };
 
 /** What the person asked for, with a pause that has run out read as on. */
 const availability = (): Availability => {
@@ -133,6 +138,7 @@ const workerState = (): WorkerState => {
 		jobsCompleted: snapshot?.jobsCompleted ?? 0,
 		tokensOut: snapshot?.tokensOut ?? 0,
 		backends: snapshot?.backends.map(toBackendState) ?? settings?.backends.map(notProbed) ?? [],
+		localModels: localModelsState,
 	};
 };
 
@@ -283,6 +289,24 @@ const changed = () => {
 // Keeps the tray's "time left" and job rates current when nothing else changes.
 setInterval(changed, 1_000);
 
+/** Runs the app's own llama-server while the saved backends include it. The
+ *  worker doesn't wait for it: until it answers, that backend reads as down. */
+const syncLocalModels = async () => {
+	const wanted = settings?.backends.includes(LOCAL_MODELS_URL) ?? false;
+	// A failed start gets another try on the next save.
+	const running = localModels !== null && localModelsState.phase !== "failed";
+	if (wanted === running) return;
+	if (wanted) {
+		localModels = await startLocalModels((next) => {
+			localModelsState = next;
+			changed();
+		});
+	} else {
+		await localModels?.stop();
+		localModels = null;
+	}
+};
+
 /** (Re)start the worker from the saved settings and token. */
 const restartWorker = async () => {
 	await worker?.stop();
@@ -350,7 +374,7 @@ tray.on("tray-clicked", (event) => {
 			if (settings) Utils.openExternal(settings.serverUrl);
 			return;
 		case "quit":
-			return Utils.quit();
+			return localModels?.stop().finally(() => Utils.quit()) ?? Utils.quit();
 	}
 });
 
@@ -384,6 +408,7 @@ function createRpc() {
 					} catch (error) {
 						return { ok: false, errors: [error instanceof Error ? error.message : String(error)] };
 					}
+					void syncLocalModels();
 					await restartWorker();
 					return { ok: true };
 				},
@@ -391,6 +416,11 @@ function createRpc() {
 				detectBackends: () => probeBackends(LOCAL_BACKENDS),
 				unloadModel: async (model) =>
 					(await worker?.unload(model.backend, model.id)) ?? "Shoal isn't running.",
+				listLocalModels: () => (localModelsState.phase === "running" ? listLocalModels() : []),
+				downloadLocalModel: ({ repo }) => downloadLocalModel(repo),
+				deleteLocalModel: ({ id }) => deleteLocalModel(id),
+				searchModels: ({ query }) => searchModels(query),
+				modelQuants: ({ repo }) => modelQuants(repo),
 			},
 		},
 	});
@@ -398,5 +428,6 @@ function createRpc() {
 
 const saved = settings?.availability;
 if (saved !== undefined && isPaused(saved)) await setAvailability(availability());
+void syncLocalModels();
 await restartWorker();
 if (settings === null || token === null) openWindow();

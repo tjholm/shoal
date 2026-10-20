@@ -3,6 +3,7 @@ import { Input } from "@shoal/ui/components/input";
 import { ShoalGlyph } from "@shoal/ui/components/ShoalMark";
 import { Lock } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
+import { LOCAL_MODELS_URL } from "../shared/local-models";
 import type { BackendState } from "../shared/rpc";
 import { rpc } from "./rpc";
 import { DIALECT_NAME, hostOf } from "./ui";
@@ -14,6 +15,7 @@ export function Setup() {
 	const [found, setFound] = useState<ReadonlyArray<BackendState> | null>(null);
 	const [chosen, setChosen] = useState<ReadonlySet<string>>(new Set());
 	const [other, setOther] = useState("");
+	const [runLocally, setRunLocally] = useState(false);
 	const [errors, setErrors] = useState<ReadonlyArray<string>>([]);
 	const [saving, setSaving] = useState(false);
 
@@ -22,6 +24,8 @@ export function Setup() {
 			const reachable = backends.filter((b) => b.dialect !== null);
 			setFound(reachable);
 			setChosen(new Set(reachable.map((b) => b.url)));
+			// Someone with no model server yet is who the built-in one is for.
+			setRunLocally(reachable.length === 0);
 		});
 	}, []);
 
@@ -38,7 +42,7 @@ export function Setup() {
 		const result = await rpc.request.saveSettings({
 			serverUrl,
 			token,
-			backends: [...chosen, other],
+			backends: [...chosen, ...(runLocally ? [LOCAL_MODELS_URL] : []), other],
 			name: "",
 			concurrency: 1,
 			launchAtLogin: false,
@@ -91,6 +95,15 @@ export function Setup() {
 							</span>
 						</label>
 					))}
+					<label
+						className={`flex items-center gap-3 rounded-[9px] border px-3.5 py-[11px] ${runLocally ? "border-lumen-edge bg-lumen-wash" : "border-line bg-shelf"}`}
+					>
+						<input type="checkbox" checked={runLocally} onChange={() => setRunLocally((on) => !on)} className="size-4 accent-[var(--signal-lumen)]" />
+						<span className="flex flex-1 flex-col gap-0.5">
+							<span className="text-[13px]">Run models with Shoal</span>
+							<span className="text-xs text-mist">Installs llama.cpp (about 35 MB); you pick models to download afterwards.</span>
+						</span>
+					</label>
 					<Input value={other} onChange={(e) => setOther(e.target.value)} placeholder="Another backend URL (optional)" className="font-mono" autoComplete="off" />
 				</fieldset>
 

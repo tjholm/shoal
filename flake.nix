@@ -54,6 +54,14 @@
             stdenv.cc.cc.lib
             zlib
           ];
+
+          # The desktop's built-in llama.cpp (apps/desktop/src/bun/local-models.ts)
+          # is a prebuilt Ubuntu binary; libstdc++ and libgomp come from
+          # stdenv.cc.cc.lib above.
+          llamaCppLibs = with pkgs; [
+            openssl
+            vulkan-loader
+          ];
         in
         {
           default = pkgs.mkShell {
@@ -62,7 +70,7 @@
 
             # Prebuilt binaries run through nix-ld, which reads this path.
             NIX_LD_LIBRARY_PATH = pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isLinux
-              (pkgs.lib.makeLibraryPath electrobunLibs);
+              (pkgs.lib.makeLibraryPath (electrobunLibs ++ llamaCppLibs));
 
             shellHook = pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
               # GTK aborts on file dialogs and theming without its schemas.

@@ -41,3 +41,6 @@ export const statusLabel = (state: WorkerState) => {
 				: `Online · ${state.jobs.length} job${state.jobs.length === 1 ? "" : "s"}`;
 	}
 };
+
+export const bytes = (n: number) =>
+	n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : n >= 1e6 ? `${Math.round(n / 1e6)} MB` : `${Math.round(n / 1e3)} kB`;

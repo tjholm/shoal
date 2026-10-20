@@ -1,7 +1,8 @@
 import { Button } from "@shoal/ui/components/button";
 import { Input } from "@shoal/ui/components/input";
-import { Lock, Minus, Plus, X } from "lucide-react";
+import { Cpu, Lock, Minus, Plus, X } from "lucide-react";
 import { type FormEvent, type ReactNode, useEffect, useId, useState } from "react";
+import { LOCAL_MODELS_URL } from "../shared/local-models";
 import type { SettingsView, WorkerState } from "../shared/rpc";
 import { BackendChip } from "./Models";
 import { rpc } from "./rpc";
@@ -41,6 +42,7 @@ function SettingsForm({ saved, state, onReload }: { saved: SettingsView; state: 
 	const [launchAtLogin, setLaunchAtLogin] = useState(saved.launchAtLogin);
 	const [errors, setErrors] = useState<ReadonlyArray<string>>([]);
 	const [saving, setSaving] = useState(false);
+	const runsLocally = backends.some((b) => b.value === LOCAL_MODELS_URL);
 
 	const submit = async (event: FormEvent) => {
 		event.preventDefault();
@@ -113,10 +115,23 @@ function SettingsForm({ saved, state, onReload }: { saved: SettingsView; state: 
 				<section className="flex flex-col gap-3">
 					<div className="flex items-center justify-between">
 						<SectionTitle>Backends</SectionTitle>
-						<Button type="button" variant="outline" size="xs" onClick={() => setBackends((rows) => [...rows, row("")])}>
-							<Plus aria-hidden="true" />
-							Add backend
-						</Button>
+						<div className="flex gap-2">
+							{!runsLocally && (
+								<Button
+									type="button"
+									variant="outline"
+									size="xs"
+									onClick={() => setBackends((rows) => [...rows, row(LOCAL_MODELS_URL)])}
+								>
+									<Cpu aria-hidden="true" />
+									Run models with Shoal
+								</Button>
+							)}
+							<Button type="button" variant="outline" size="xs" onClick={() => setBackends((rows) => [...rows, row("")])}>
+								<Plus aria-hidden="true" />
+								Add backend
+							</Button>
+						</div>
 					</div>
 					{backends.length === 0 ? (
 						<Empty>No backends. Add one above.</Empty>
@@ -127,23 +142,33 @@ function SettingsForm({ saved, state, onReload }: { saved: SettingsView; state: 
 								return (
 									<div key={backend.id} className="flex items-center gap-3 border-b border-line px-4 py-3 last:border-b-0">
 										<span className="w-3.5 font-mono text-[11px] text-silt">{index + 1}</span>
-										<div className="flex min-w-0 flex-1 flex-col gap-1">
-											<Input
-												aria-label={`Backend ${index + 1}`}
-												value={backend.value}
-												onChange={(e) =>
-													setBackends((rows) => rows.map((r) => (r.id === backend.id ? { ...r, value: e.target.value } : r)))
-												}
-												placeholder="http://localhost:11434"
-												className="h-8 font-mono"
-												autoComplete="off"
-											/>
-											{health?.dialect && (
+										{backend.value === LOCAL_MODELS_URL ? (
+											<div className="flex min-w-0 flex-1 flex-col gap-1">
+												<span className="text-[13px]">This computer</span>
 												<span className="text-xs text-mist">
-													{DIALECT_NAME[health.dialect]} · {health.models.length} models · {health.loaded.length} loaded
+													llama.cpp, run by Shoal · {state.localModels.phase}
+													{health?.dialect && ` · ${health.models.length} models · ${health.loaded.length} loaded`}
 												</span>
-											)}
-										</div>
+											</div>
+										) : (
+											<div className="flex min-w-0 flex-1 flex-col gap-1">
+												<Input
+													aria-label={`Backend ${index + 1}`}
+													value={backend.value}
+													onChange={(e) =>
+														setBackends((rows) => rows.map((r) => (r.id === backend.id ? { ...r, value: e.target.value } : r)))
+													}
+													placeholder="http://localhost:11434"
+													className="h-8 font-mono"
+													autoComplete="off"
+												/>
+												{health?.dialect && (
+													<span className="text-xs text-mist">
+														{DIALECT_NAME[health.dialect]} · {health.models.length} models · {health.loaded.length} loaded
+													</span>
+												)}
+											</div>
+										)}
 										{health && <BackendChip backend={health} />}
 										<Button
 											type="button"
