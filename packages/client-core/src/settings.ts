@@ -1,5 +1,4 @@
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { Schema } from "effect";
 
@@ -22,8 +21,7 @@ const Availability = Schema.Union([
 ]);
 export type Availability = typeof Availability.Type;
 
-/** A worker's saved settings, shared by every shoal client on this machine.
- *  The token is kept in the OS credential store, not here. */
+/** A worker's saved settings. The token is kept in the OS credential store, not here. */
 const SettingsFile = Schema.Struct({
 	/** Origin of the shoal server, e.g. https://shoal.example.com. */
 	serverUrl: Schema.String,
@@ -42,54 +40,58 @@ export interface Settings {
 	readonly availability: Availability;
 }
 
-export const settingsPath = path.join(
-	process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), ".config"),
-	"shoal",
-	"worker.json",
-);
+/** Where a client keeps its settings file, and the credential store service its API keys go under. */
+export interface SettingsStore {
+	readonly dir: string;
+	readonly credentialService: string;
+}
+
+const settingsPath = (store: SettingsStore) => path.join(store.dir, "worker.json");
 
 /** The saved settings, or null before first-run setup. Throws if the file is unreadable. */
-export const loadSettings = async (): Promise<Settings | null> => {
+export const loadSettings = async (store: SettingsStore): Promise<Settings | null> => {
+	const file = settingsPath(store);
 	let raw: string;
 	try {
-		raw = await readFile(settingsPath, "utf8");
+		raw = await readFile(file, "utf8");
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
 		throw error;
 	}
-	let file: typeof SettingsFile.Type;
+	let saved: typeof SettingsFile.Type;
 	try {
-		file = Schema.decodeUnknownSync(SettingsJson)(raw);
+		saved = Schema.decodeUnknownSync(SettingsJson)(raw);
 	} catch (error) {
 		throw new Error(
-			`Settings file ${settingsPath} is invalid. Fix or delete it, then restart Shoal.`,
+			`Settings file ${file} is invalid. Fix or delete it, then restart Shoal.`,
 			{ cause: error },
 		);
 	}
 	return {
-		serverUrl: file.serverUrl,
-		backends: file.backends,
-		name: file.name ?? "",
-		concurrency: file.concurrency ?? 1,
-		availability: file.availability ?? "on",
+		serverUrl: saved.serverUrl,
+		backends: saved.backends,
+		name: saved.name ?? "",
+		concurrency: saved.concurrency ?? 1,
+		availability: saved.availability ?? "on",
 	};
 };
 
-export const saveSettings = async (settings: Settings) => {
-	await mkdir(path.dirname(settingsPath), { recursive: true, mode: 0o700 });
-	await writeFile(settingsPath, Schema.encodeSync(SettingsJson)(settings), { mode: 0o600 });
+export const saveSettings = async (store: SettingsStore, settings: Settings) => {
+	const file = settingsPath(store);
+	await mkdir(store.dir, { recursive: true, mode: 0o700 });
+	await writeFile(file, Schema.encodeSync(SettingsJson)(settings), { mode: 0o600 });
 	// writeFile's mode only applies when it creates the file.
-	await chmod(settingsPath, 0o600);
+	await chmod(file, 0o600);
 };
 
 /** One API key per server, in the Keychain, libsecret or Windows Credential Manager. */
-const tokenEntry = (serverUrl: string) => ({ service: "school.shoal.worker", name: serverUrl });
+const tokenEntry = (store: SettingsStore, serverUrl: string) => ({ service: store.credentialService, name: serverUrl });
 
-export const loadToken = (serverUrl: string): Promise<string | null> =>
-	Bun.secrets.get(tokenEntry(serverUrl));
+export const loadToken = (store: SettingsStore, serverUrl: string): Promise<string | null> =>
+	Bun.secrets.get(tokenEntry(store, serverUrl));
 
-export const saveToken = (serverUrl: string, token: string): Promise<void> =>
-	Bun.secrets.set({ ...tokenEntry(serverUrl), value: token });
+export const saveToken = (store: SettingsStore, serverUrl: string, token: string): Promise<void> =>
+	Bun.secrets.set({ ...tokenEntry(store, serverUrl), value: token });
 
 /** Bare hosts are allowed so people can paste "shoal.example.com". */
 const parseHttpUrl = (input: string) => {

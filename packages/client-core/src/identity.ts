@@ -1,6 +1,4 @@
-import os from "node:os";
 import {
-	Config,
 	Context,
 	Crypto,
 	Effect,
@@ -54,7 +52,7 @@ export class IdentityStore extends Context.Service<
 	 * connect to multiple Shoal servers (prod / staging / homelab) without
 	 * collision.
 	 */
-	static readonly layer = (serverUrl: string) =>
+	static readonly layer = (dir: string, serverUrl: string) =>
 		Layer.effect(
 			IdentityStore,
 			Effect.gen(function* () {
@@ -62,16 +60,12 @@ export class IdentityStore extends Context.Service<
 				const path = yield* Path.Path;
 				const crypto = yield* Crypto.Crypto;
 
-				const stateRoot = yield* Config.String("XDG_STATE_HOME").pipe(
-					Config.withDefault(path.join(os.homedir(), ".local", "state")),
-				);
 				const digest = yield* crypto.digest(
 					"SHA-256",
 					new TextEncoder().encode(serverUrl),
 				);
 				const file = path.join(
-					stateRoot,
-					"shoal",
+					dir,
 					`identity-${Hex.encode(digest).slice(0, 16)}.json`,
 				);
 
