@@ -55,7 +55,14 @@ const windowUrl = await resolveWindowUrl();
 
 let window: { win: BrowserWindow; rpc: ReturnType<typeof createRpc> } | null = null;
 
+// On macOS the app shows in the Dock only while its window is open; otherwise
+// it lives in the menu bar alone.
+const setDockIconVisible = (visible: boolean) => {
+	if (process.platform === "darwin") Utils.setDockIconVisible(visible);
+};
+
 const openWindow = () => {
+	setDockIconVisible(true);
 	if (window) {
 		window.win.show();
 		window.win.activate();
@@ -70,6 +77,7 @@ const openWindow = () => {
 	});
 	win.on("close", () => {
 		window = null;
+		setDockIconVisible(false);
 	});
 	window = { win, rpc };
 };
@@ -401,3 +409,4 @@ const saved = settings?.availability;
 if (saved !== undefined && isPaused(saved)) await setAvailability(availability());
 await restartWorker();
 if (settings === null || token === null) openWindow();
+else setDockIconVisible(false);
