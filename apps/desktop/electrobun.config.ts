@@ -15,6 +15,9 @@ export default {
 		// The app lives in the tray; closing the setup window must not quit it.
 		exitOnLastWindowClosed: false,
 	},
+	scripts: {
+		postWrap: "scripts/mac-identity.ts",
+	},
 	build: {
 		// The worker is Effect on Bun; Cottontail's API coverage is undocumented.
 		mainProcess: "bun",
@@ -33,8 +36,7 @@ export default {
 			"assets/tray-sharing.ico": "views/assets/tray-sharing.ico",
 			"assets/tray-paused.ico": "views/assets/tray-paused.ico",
 		},
-		// In dev:hmr, Vite's dev server serves the window instead.
-		watchIgnore: ["dist/**"],
+		// `dev` rebuilds dist/ with `vite build --watch`, and the app rebuilds to pick it up.
 		mac: {
 			bundleCEF: false,
 			// Rendered from assets/icon.svg.

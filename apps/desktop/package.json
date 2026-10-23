@@ -3,7 +3,7 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"dev": "electrobun prepare && bun scripts/icon.ts && vite build && electrobun dev --watch",
+		"dev": "electrobun prepare && bun scripts/icon.ts && vite build && concurrently --kill-others \"vite build --watch\" \"bun scripts/dev.ts\"",
 		"start": "electrobun prepare && bun scripts/icon.ts && vite build && electrobun dev",
 		"dev:hmr": "concurrently \"bun run hmr\" \"bun run start\"",
 		"hmr": "electrobun prepare && vite",
