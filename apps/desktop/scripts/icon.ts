@@ -53,7 +53,7 @@ await Bun.write("assets/icon.png", render(appIcon, 512));
 const windowsAppIcon = appIcon.replace('viewBox="0 0 1024 1024"', 'viewBox="100 100 824 824"');
 await Bun.write("assets/icon.ico", ico(windowsAppIcon, [16, 24, 32, 48, 64, 256]));
 
-for (const state of ["paused", "sharing"]) {
+for (const state of ["paused", "sharing", "warning"]) {
 	const tray = await Bun.file(`assets/tray-${state}.svg`).text();
 	await Bun.write(`assets/tray-${state}.ico`, ico(tray, [16, 20, 24, 32, 40, 48]));
 }

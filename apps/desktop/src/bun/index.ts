@@ -209,18 +209,18 @@ const workerState = (): WorkerState => {
 const MAC_TEMPLATE_ICON = process.platform === "darwin";
 // The Windows tray loads only .ico files.
 const TRAY_EXTENSION = process.platform === "win32" ? "ico" : "svg";
-const trayImage = (accepting: boolean) => {
-	const state = accepting ? "sharing" : "paused";
+type TrayLook = "sharing" | "paused" | "warning";
+const trayImage = (state: TrayLook) => {
 	return MAC_TEMPLATE_ICON
 		? `views://assets/tray-template-${state}.svg`
 		: `views://assets/tray-${state}.${TRAY_EXTENSION}`;
 };
 const tray = MAC_TEMPLATE_ICON
-	? new Tray({ image: trayImage(false), template: true, width: 18, height: 18 })
+	? new Tray({ image: trayImage("paused"), template: true, width: 18, height: 18 })
 	: process.platform === "win32"
 		? // The 32px image, which Windows scales down to fit the tray at any display scaling.
-			new Tray({ image: trayImage(false), template: false, width: 32, height: 32 })
-		: new Tray({ image: trayImage(false), template: false });
+			new Tray({ image: trayImage("paused"), template: false, width: 32, height: 32 })
+		: new Tray({ image: trayImage("paused"), template: false });
 // Tray swallows native failures and leaves id at 0; without a tray there is
 // no way to control or quit the app.
 if (tray.id === 0) {
@@ -327,15 +327,22 @@ let trayShownAt = 0;
 /** At most once a second while only the detail line (job rates, time left) changes. */
 const renderTray = (state: WorkerState) => {
 	const accepting = state.availability === "on" && state.status !== "not-configured";
+	// Wants to take work but can't reach the server, so the menu bar should draw the eye.
+	const look: TrayLook =
+		state.status === "reconnecting" || state.status === "failed" || state.status === "stopped" || state.status === "blocked"
+			? "warning"
+			: accepting
+				? "sharing"
+				: "paused";
 	const detail = trayDetail(state);
-	const shown = JSON.stringify([accepting, trayMenu(state, detail)]);
-	const shape = JSON.stringify([accepting, trayMenu(state, null)]);
+	const shown = JSON.stringify([look, trayMenu(state, detail)]);
+	const shape = JSON.stringify([look, trayMenu(state, null)]);
 	if (shown === shownMenu) return;
 	if (shape === shownShape && Date.now() - trayShownAt < 1000) return;
 	shownMenu = shown;
 	shownShape = shape;
 	trayShownAt = Date.now();
-	const image = trayImage(accepting);
+	const image = trayImage(look);
 	if (image !== tray.image) {
 		if (MAC_TEMPLATE_ICON) {
 			// On macOS setImage drops the template flag and size, but re-showing a
