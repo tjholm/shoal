@@ -11,6 +11,7 @@ import { SERVER_REFUSED, SERVER_TIMED_OUT, SERVER_UNREACHABLE, type WorkerSnapsh
 import { ApplicationMenu, BrowserView, BrowserWindow, Tray, Updater, Utils } from "electrobun/main";
 import { elapsed, isPaused, rate, statusLabel } from "../shared/format";
 import type { BackendState, ShoalRPC, WorkerState } from "../shared/rpc";
+import { localNetworkAddress, probeLocalNetwork } from "./local-network";
 import { isLaunchAtLogin, setLaunchAtLogin } from "./login";
 import { claimSingleInstance } from "./single-instance";
 import { store } from "./store";
@@ -90,6 +91,44 @@ let worker: RunningWorker | null = null;
 let snapshot: WorkerSnapshot | null = null;
 let onlineSince: number | null = null;
 let stoppedReason: string | null = null;
+const LOCAL_NETWORK_SETTINGS = "x-apple.systempreferences:com.apple.preference.security?Privacy_LocalNetwork";
+/** How often to check whether the person has allowed Local Network access yet. */
+const LOCAL_NETWORK_RECHECK_MS = 2_000;
+
+// macOS blocks apps from the local network until the person allows it. Set
+// when the server is on the local network and a probe shows macOS refusing.
+let blockedByMacOS = false;
+let localNetworkWatch: ReturnType<typeof setInterval> | null = null;
+let probing = false;
+
+const stopWatchingLocalNetwork = () => {
+	if (localNetworkWatch !== null) clearInterval(localNetworkWatch);
+	localNetworkWatch = null;
+	blockedByMacOS = false;
+};
+
+/** After an unreachable server: is macOS the cause? If so, reconnect as soon as the person allows access. */
+const checkLocalNetwork = async () => {
+	if (process.platform !== "darwin" || settings === null || probing) return;
+	probing = true;
+	try {
+		const serverUrl = settings.serverUrl;
+		const address = await localNetworkAddress(serverUrl);
+		const result = address === null ? "unreachable" : await probeLocalNetwork(address, serverUrl);
+		if (settings?.serverUrl !== serverUrl) return;
+		if ((result === "blocked") !== blockedByMacOS) console.log(`local network probe of ${address ?? "server"}: ${result}`);
+		if (result === "blocked") {
+			blockedByMacOS = true;
+			localNetworkWatch ??= setInterval(() => void checkLocalNetwork(), LOCAL_NETWORK_RECHECK_MS);
+		} else if (blockedByMacOS) {
+			stopWatchingLocalNetwork();
+			if (result === "reachable") await worker?.retry();
+		}
+		changed();
+	} finally {
+		probing = false;
+	}
+};
 
 /** What the person asked for, with a pause that has run out read as on. */
 const availability = (): Availability => {
@@ -144,11 +183,13 @@ const workerState = (): WorkerState => {
 	const disconnected = (status === "reconnecting" || status === "failed") && connection?._tag !== "Connected";
 	const reason =
 		disconnected && (connection?._tag === "Reconnecting" || connection?._tag === "Failed") ? connection.reason : null;
+	// Retrying on a timer can't help; access is up to the person.
+	const blocked = disconnected && blockedByMacOS;
 	return {
-		status,
-		detail: status === "stopped" ? stoppedReason : reason === null ? null : describeProblem(reason),
-		retryAt: status === "reconnecting" && connection?._tag === "Reconnecting" ? connection.retryAt : null,
-		attempt: status === "reconnecting" && connection?._tag === "Reconnecting" ? connection.attempt : null,
+		status: blocked ? "blocked" : status,
+		detail: status === "stopped" ? stoppedReason : blocked ? "Needs Local Network access" : reason === null ? null : describeProblem(reason),
+		retryAt: !blocked && status === "reconnecting" && connection?._tag === "Reconnecting" ? connection.retryAt : null,
+		attempt: !blocked && status === "reconnecting" && connection?._tag === "Reconnecting" ? connection.attempt : null,
 		maxAttempts: RECONNECT_ATTEMPTS,
 		availability: wanted,
 		serverUrl: settings?.serverUrl ?? null,
@@ -263,6 +304,7 @@ const trayMenu = (state: WorkerState, detail: string | null): Array<MenuItem> =>
 	const connectionItems = [
 		...(state.status === "failed" ? [item("Try Again", "retry")] : []),
 		...(state.status === "reconnecting" ? [item("Try Now", "retry")] : []),
+		...(state.status === "blocked" ? [item("Allow in System Settings…", "local-network")] : []),
 	];
 	return [
 		item(trayTitle(state), null, { enabled: false }),
@@ -330,12 +372,18 @@ const restartWorker = async () => {
 	snapshot = null;
 	onlineSince = null;
 	stoppedReason = null;
+	stopWatchingLocalNetwork();
 	if (settings !== null && token !== null) {
 		worker = await startWorker({ ...settings, availability: availability() }, token, {
 			onSnapshot: (next) => {
 				const online = next.connection._tag === "Connected";
 				onlineSince = online ? (onlineSince ?? Date.now()) : null;
 				snapshot = next;
+				const { connection } = next;
+				if (connection._tag === "Connected") stopWatchingLocalNetwork();
+				else if ((connection._tag === "Reconnecting" || connection._tag === "Failed") && connection.reason === SERVER_UNREACHABLE) {
+					void checkLocalNetwork();
+				}
 				changed();
 			},
 			onStopped: (reason) => {
@@ -386,6 +434,9 @@ tray.on("tray-clicked", (event) => {
 			return setAvailability("off");
 		case "retry":
 			return worker?.retry();
+		case "local-network":
+			Utils.openExternal(LOCAL_NETWORK_SETTINGS);
+			return;
 		case "open":
 			return openWindow();
 		case "dashboard":
@@ -431,6 +482,9 @@ function createRpc() {
 				},
 				setAvailability: (next) => setAvailability(next),
 				retryConnection: () => worker?.retry(),
+				openLocalNetworkSettings: () => {
+					Utils.openExternal(LOCAL_NETWORK_SETTINGS);
+				},
 				detectBackends: () => probeBackends(LOCAL_BACKENDS),
 				unloadModel: async (model) =>
 					(await worker?.unload(model.backend, model.id)) ?? "Shoal isn't running.",

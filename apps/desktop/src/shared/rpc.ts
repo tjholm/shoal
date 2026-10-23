@@ -14,6 +14,8 @@ export type WorkerStatus =
 	| "reconnecting"
 	/** Gave up reconnecting; waits for the person to try again. */
 	| "failed"
+	/** macOS is blocking Shoal from the server on the local network; reconnects once the person allows it. */
+	| "blocked"
 	| "paused"
 	| "off"
 	/** Stopped for good, e.g. the server rejected the API key. */
@@ -89,6 +91,7 @@ export type ShoalRPC = {
 			setAvailability: { params: Availability; response: void };
 			/** Connects now, skipping any backoff. */
 			retryConnection: { params: void; response: void };
+			openLocalNetworkSettings: { params: void; response: void };
 			/** Probes the ports local model servers usually listen on. */
 			detectBackends: { params: void; response: ReadonlyArray<BackendState> };
 			/** Resolves to an error message when something couldn't be unloaded. */

@@ -35,6 +35,8 @@ export const statusLabel = (state: WorkerState) => {
 			return "Reconnecting…";
 		case "failed":
 			return "Couldn't connect";
+		case "blocked":
+			return "Blocked by macOS";
 		case "stopped":
 			return "Stopped";
 		case "online":
