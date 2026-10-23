@@ -33,10 +33,14 @@ export const probeBackends = (urls: Arr.NonEmptyReadonlyArray<string>) =>
 export interface RunningWorker {
 	/** Pausing disconnects at once, abandoning running jobs. */
 	readonly setPaused: (paused: boolean) => Promise<void>;
+	/** Connects now, skipping the backoff or starting again after giving up. */
+	readonly retry: () => Promise<void>;
 	/** Resolves to an error message when the unload failed. */
 	readonly unload: (backendUrl: string, model: string) => Promise<string | null>;
 	readonly stop: () => Promise<void>;
 }
+
+const RECONNECT_ATTEMPTS = 6;
 
 export const startWorker = (
 	settings: Settings,
@@ -72,6 +76,8 @@ export const startWorker = (
 				maxConcurrent: settings.concurrency,
 				name: settings.name === "" ? Option.none() : Option.some(settings.name),
 				paused: settings.availability !== "on",
+				// With 1s doubling backoff, gives up about a minute after the first failure.
+				reconnectAttempts: RECONNECT_ATTEMPTS,
 			});
 			yield* worker.changes.pipe(
 				Stream.runForEach((snapshot) => Effect.sync(() => handlers.onSnapshot(snapshot))),
@@ -79,6 +85,7 @@ export const startWorker = (
 			);
 			resolve({
 				setPaused: (paused) => Effect.runPromise(paused ? worker.pause : worker.resume),
+				retry: () => Effect.runPromise(worker.retry),
 				unload: (backendUrl, model) =>
 					Effect.runPromise(
 						worker.unload(backendUrl, model).pipe(
@@ -100,6 +107,7 @@ export const startWorker = (
 			if (!started) {
 				resolve({
 					setPaused: async () => {},
+					retry: async () => {},
 					unload: () => Promise.resolve("The worker has stopped."),
 					stop: async () => {},
 				});

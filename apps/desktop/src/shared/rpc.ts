@@ -12,6 +12,8 @@ export type WorkerStatus =
 	| "connecting"
 	| "online"
 	| "reconnecting"
+	/** Gave up reconnecting; waits for the person to try again. */
+	| "failed"
 	| "paused"
 	| "off"
 	/** Stopped for good, e.g. the server rejected the API key. */
@@ -30,8 +32,10 @@ export interface BackendState {
 
 export interface WorkerState {
 	readonly status: WorkerStatus;
-	/** Why the worker is reconnecting or stopped. */
+	/** Why the worker is reconnecting, failed or stopped. */
 	readonly detail: string | null;
+	/** When a reconnecting worker tries next, epoch ms. */
+	readonly retryAt: number | null;
 	readonly availability: Availability;
 	readonly serverUrl: string | null;
 	/** Empty keeps whatever name the server has stored. */
@@ -79,6 +83,8 @@ export type ShoalRPC = {
 			getSettings: { params: void; response: SettingsView | null };
 			saveSettings: { params: SettingsForm; response: SaveResult };
 			setAvailability: { params: Availability; response: void };
+			/** Connects now, skipping any backoff. */
+			retryConnection: { params: void; response: void };
 			/** Probes the ports local model servers usually listen on. */
 			detectBackends: { params: void; response: ReadonlyArray<BackendState> };
 			/** Resolves to an error message when something couldn't be unloaded. */

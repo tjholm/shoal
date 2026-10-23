@@ -58,6 +58,7 @@ export const statusTone = (status: WorkerState["status"]): Tone => {
 		case "online":
 			return "lumen";
 		case "stopped":
+		case "failed":
 			return "coral";
 		case "connecting":
 		case "reconnecting":
@@ -75,6 +76,7 @@ export const STATUS_WORD: Record<WorkerState["status"], string> = {
 	stopped: "Stopped",
 	connecting: "Connecting…",
 	reconnecting: "Reconnecting…",
+	failed: "Not connected",
 	"not-configured": "Not set up",
 };
 

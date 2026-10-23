@@ -33,6 +33,8 @@ export const statusLabel = (state: WorkerState) => {
 			return "Connecting…";
 		case "reconnecting":
 			return "Reconnecting…";
+		case "failed":
+			return "Couldn't connect";
 		case "stopped":
 			return "Stopped";
 		case "online":

@@ -1,3 +1,4 @@
+import { Button } from "@shoal/ui/components/button";
 import { FitNumber } from "@shoal/ui/components/FitNumber";
 import { Sparkline } from "@shoal/ui/components/Sparkline";
 import { TextMorph } from "@shoal/ui/components/TextMorph";
@@ -87,7 +88,10 @@ function Banner({
 	const title = online ? "Accepting work" : statusLabel(state);
 	const detail = online
 		? `Connected for ${elapsed(now - (state.onlineSince ?? now))} · ${state.jobs.length} of ${state.concurrency} slots busy`
-		: state.detail;
+		: state.retryAt !== null
+			? `${state.detail} · trying again in ${elapsed(Math.max(0, state.retryAt - now))}`
+			: state.detail;
+	const retrying = state.status === "reconnecting" || state.status === "failed";
 	const segment = (label: string, active: boolean, onClick: () => void) => (
 		<button
 			type="button"
@@ -110,6 +114,13 @@ function Banner({
 				<div className="flex min-w-0 flex-col gap-1">
 					<div className="text-[22px] font-semibold tracking-[-0.02em]">{title}</div>
 					{detail && <div className="text-[13px] text-mist">{detail}</div>}
+					{retrying && (
+						<div className="mt-2 flex flex-wrap gap-2">
+							<Button type="button" size="sm" variant={state.status === "failed" ? "default" : "outline"} onClick={() => void rpc.request.retryConnection()}>
+								{state.status === "failed" ? "Try again" : "Try now"}
+							</Button>
+						</div>
+					)}
 				</div>
 			</div>
 			<div role="group" aria-label="Availability" className="flex flex-none gap-0.5 rounded-[9px] border border-line bg-trench p-[3px]">

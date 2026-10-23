@@ -122,15 +122,16 @@ const workerState = (): WorkerState => {
 							? "online"
 							: connection?._tag === "Reconnecting"
 								? "reconnecting"
-								: "connecting";
+								: connection?._tag === "Failed"
+									? "failed"
+									: "connecting";
+	const disconnected = (status === "reconnecting" || status === "failed") && connection?._tag !== "Connected";
+	const reason =
+		disconnected && (connection?._tag === "Reconnecting" || connection?._tag === "Failed") ? connection.reason : null;
 	return {
 		status,
-		detail:
-			status === "stopped"
-				? stoppedReason
-				: status === "reconnecting" && connection?._tag === "Reconnecting"
-					? connection.reason
-					: null,
+		detail: status === "stopped" ? stoppedReason : reason,
+		retryAt: status === "reconnecting" && connection?._tag === "Reconnecting" ? connection.retryAt : null,
 		availability: wanted,
 		serverUrl: settings?.serverUrl ?? null,
 		name: settings?.name ?? "",
@@ -201,6 +202,7 @@ const trayDetail = (state: WorkerState) => {
 	if (isPaused(state.availability)) {
 		return `${elapsed(state.availability.pausedUntil - Date.now())} left`;
 	}
+	if (state.retryAt !== null) return `${state.detail} · trying again in ${elapsed(state.retryAt - Date.now())}`;
 	if (state.status !== "online" || state.jobs.length === 0) return state.detail;
 	return state.jobs
 		.slice(0, 2)
@@ -234,9 +236,15 @@ const trayMenu = (state: WorkerState, detail: string | null): Array<MenuItem> =>
 					? [item("Pause for", null, { enabled: controls, submenu: durations("pause", PAUSES) })]
 					: []),
 			];
+	// Under the status they act on.
+	const connectionItems = [
+		...(state.status === "failed" ? [item("Try again", "retry")] : []),
+		...(state.status === "reconnecting" ? [item("Try now", "retry")] : []),
+	];
 	return [
 		item(statusLabel(state), null, { enabled: false }),
 		...(detail ? [item(detail, null, { enabled: false })] : []),
+		...connectionItems,
 		separator,
 		...availabilityItems,
 		separator,
@@ -353,6 +361,8 @@ tray.on("tray-clicked", (event) => {
 			return setAvailability("on");
 		case "stay-off":
 			return setAvailability("off");
+		case "retry":
+			return worker?.retry();
 		case "open":
 			return openWindow();
 		case "dashboard":
@@ -397,6 +407,7 @@ function createRpc() {
 					return { ok: true };
 				},
 				setAvailability: (next) => setAvailability(next),
+				retryConnection: () => worker?.retry(),
 				detectBackends: () => probeBackends(LOCAL_BACKENDS),
 				unloadModel: async (model) =>
 					(await worker?.unload(model.backend, model.id)) ?? "Shoal isn't running.",
