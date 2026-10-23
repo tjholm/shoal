@@ -229,6 +229,9 @@ const trayMenu = (state: WorkerState, detail: string | null): Array<MenuItem> =>
 		separator,
 		...availabilityItems,
 		separator,
+		...(trayIcon.spin
+			? [item("Animate while working", "animate", { checked: settings?.animateTray ?? false, enabled: controls }), separator]
+			: []),
 		item("Open Shoal…", "open"),
 		...(settings ? [item("Open dashboard", "dashboard")] : []),
 		separator,
@@ -271,6 +274,7 @@ const changed = () => {
 		pushTimer = null;
 		const state = workerState();
 		window?.rpc.send.stateChanged(state);
+		trayIcon.spin?.(settings?.animateTray === true && state.status === "online" && state.jobs.length > 0);
 		renderTray(state);
 	}, 100);
 };
@@ -320,6 +324,13 @@ const setAvailability = async (next: Availability) => {
 	changed();
 };
 
+const setAnimateTray = async (on: boolean) => {
+	if (settings === null) return;
+	settings = { ...settings, animateTray: on };
+	await saveSettings(store, settings);
+	changed();
+};
+
 const extendPause = (minutes: number) => {
 	const current = availability();
 	const from = isPaused(current) ? current.pausedUntil : Date.now();
@@ -344,6 +355,8 @@ tray.on("tray-clicked", (event) => {
 			return worker?.retry();
 		case "local-network":
 			return localNetwork.openSettings();
+		case "animate":
+			return setAnimateTray(!(settings?.animateTray ?? false));
 		case "open":
 			return openWindow();
 		case "dashboard":
