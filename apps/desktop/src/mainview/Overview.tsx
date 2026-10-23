@@ -2,6 +2,7 @@ import { Button } from "@shoal/ui/components/button";
 import { FitNumber } from "@shoal/ui/components/FitNumber";
 import { Sparkline } from "@shoal/ui/components/Sparkline";
 import { TextMorph } from "@shoal/ui/components/TextMorph";
+import { CircleAlert, type LucideIcon, RefreshCw } from "lucide-react";
 import { type ReactNode, useRef, useState } from "react";
 import { elapsed, isPaused, statusLabel } from "../shared/format";
 import type { Availability, RunningJob, WorkerState } from "../shared/rpc";
@@ -85,13 +86,15 @@ function Banner({
 }) {
 	const online = state.status === "online";
 	const tone = statusTone(state.status);
-	const title = online ? "Accepting work" : statusLabel(state);
-	const detail = online
+	const disconnected = state.status === "reconnecting" || state.status === "failed";
+	const title = online ? "Accepting work" : disconnected ? "Not connected" : statusLabel(state);
+	const subtitle = online
 		? `Connected for ${elapsed(now - (state.onlineSince ?? now))} · ${state.jobs.length} of ${state.concurrency} slots busy`
 		: state.retryAt !== null
-			? `${state.detail} · trying again in ${elapsed(Math.max(0, state.retryAt - now))}`
-			: state.detail;
-	const retrying = state.status === "reconnecting" || state.status === "failed";
+			? `Reconnecting in ${elapsed(Math.max(0, state.retryAt - now))} · attempt ${state.attempt} of ${state.maxAttempts}`
+			: state.status === "failed"
+				? `Stopped trying after ${state.maxAttempts} attempts`
+				: state.detail;
 	const segment = (label: string, active: boolean, onClick: () => void) => (
 		<button
 			type="button"
@@ -103,38 +106,67 @@ function Banner({
 		</button>
 	);
 	return (
-		<section
-			className={`flex items-center justify-between gap-5 rounded-xl border px-[22px] py-5 ${online ? "border-lumen-edge bg-lumen-wash" : "border-line bg-shelf"}`}
-		>
-			<div className="flex min-w-0 items-center gap-4">
-				<span
-					className="size-3 flex-none rounded-full"
-					style={{ background: TONE_COLOR[tone], boxShadow: online ? "0 0 0 5px var(--signal-lumen-wash)" : undefined }}
-				/>
-				<div className="flex min-w-0 flex-col gap-1">
-					<div className="text-[22px] font-semibold tracking-[-0.02em]">{title}</div>
-					{detail && <div className="text-[13px] text-mist">{detail}</div>}
-					{retrying && (
-						<div className="mt-2 flex flex-wrap gap-2">
-							<Button type="button" size="sm" variant={state.status === "failed" ? "default" : "outline"} onClick={() => void rpc.request.retryConnection()}>
-								{state.status === "failed" ? "Try again" : "Try now"}
-							</Button>
-						</div>
-					)}
+		<section className={`overflow-hidden rounded-xl border ${online ? "border-lumen-edge bg-lumen-wash" : "border-line bg-shelf"}`}>
+			<div className="flex items-center justify-between gap-5 px-[22px] py-5">
+				<div className="flex min-w-0 items-center gap-4">
+					<span
+						className="size-3 flex-none rounded-full"
+						style={{ background: TONE_COLOR[tone], boxShadow: online ? "0 0 0 5px var(--signal-lumen-wash)" : undefined }}
+					/>
+					<div className="flex min-w-0 flex-col gap-1">
+						<div className="text-[22px] font-semibold tracking-[-0.02em]">{title}</div>
+						{subtitle && <div className="text-[13px] text-mist">{subtitle}</div>}
+					</div>
+				</div>
+				<div role="group" aria-label="Availability" className="flex flex-none gap-0.5 rounded-[9px] border border-line bg-trench p-[3px]">
+					{segment("On", state.availability === "on", () => {
+						onChoose();
+						setAvailability("on");
+					})}
+					{segment(choosingPause ? "Pause ▴" : "Pause ▾", isPaused(state.availability), onTogglePause)}
+					{segment("Off", state.availability === "off", () => {
+						onChoose();
+						setAvailability("off");
+					})}
 				</div>
 			</div>
-			<div role="group" aria-label="Availability" className="flex flex-none gap-0.5 rounded-[9px] border border-line bg-trench p-[3px]">
-				{segment("On", state.availability === "on", () => {
-					onChoose();
-					setAvailability("on");
-				})}
-				{segment(choosingPause ? "Pause ▴" : "Pause ▾", isPaused(state.availability), onTogglePause)}
-				{segment("Off", state.availability === "off", () => {
-					onChoose();
-					setAvailability("off");
-				})}
-			</div>
+			{state.status === "reconnecting" && (
+				<Problem tone="amber" icon={RefreshCw} message={state.detail}>
+					<Button type="button" size="sm" variant="outline" onClick={() => void rpc.request.retryConnection()}>
+						Try now
+					</Button>
+				</Problem>
+			)}
+			{state.status === "failed" && (
+				<Problem tone="coral" icon={CircleAlert} message={`${state.detail ?? ""} Check the server is running.`}>
+					<Button type="button" size="sm" onClick={() => void rpc.request.retryConnection()}>
+						Try again
+					</Button>
+				</Problem>
+			)}
 		</section>
+	);
+}
+
+/** The strip along the bottom of the banner saying what's wrong and what to do about it. */
+function Problem({
+	tone,
+	icon: Icon,
+	message,
+	children,
+}: {
+	tone: "amber" | "coral";
+	icon: LucideIcon;
+	message: string | null;
+	children: ReactNode;
+}) {
+	const toneClass = tone === "amber" ? "border-amber-edge bg-amber-wash text-amber" : "border-coral-edge bg-coral-wash text-coral";
+	return (
+		<div role="status" className={`flex items-center gap-3 border-t px-[22px] py-3 ${toneClass}`}>
+			<Icon size={18} aria-hidden="true" className="flex-none" />
+			<p className="m-0 min-w-0 flex-1 text-[13px] leading-[1.45] text-foam">{message}</p>
+			{children}
+		</div>
 	);
 }
 

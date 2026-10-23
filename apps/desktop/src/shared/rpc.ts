@@ -32,10 +32,14 @@ export interface BackendState {
 
 export interface WorkerState {
 	readonly status: WorkerStatus;
-	/** Why the worker is reconnecting, failed or stopped. */
+	/** Why the worker is reconnecting, failed or stopped, as a sentence naming the server. */
 	readonly detail: string | null;
 	/** When a reconnecting worker tries next, epoch ms. */
 	readonly retryAt: number | null;
+	/** Which reconnect attempt failed last, from 1, while reconnecting. */
+	readonly attempt: number | null;
+	/** Attempts before the worker gives up and waits for "Try again". */
+	readonly maxAttempts: number;
 	readonly availability: Availability;
 	readonly serverUrl: string | null;
 	/** Empty keeps whatever name the server has stored. */

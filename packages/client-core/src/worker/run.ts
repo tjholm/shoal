@@ -64,8 +64,13 @@ export interface WorkerOptions {
 export type WorkerConnection =
 	| { readonly _tag: "Connecting" }
 	| { readonly _tag: "Connected"; readonly workerId: string }
-	/** `retryAt` is when the next attempt starts, epoch ms. */
-	| { readonly _tag: "Reconnecting"; readonly reason: string; readonly retryAt: number }
+	/** `retryAt` is when the next attempt starts, epoch ms; `attempt` counts from 1 since the last connection. */
+	| {
+			readonly _tag: "Reconnecting";
+			readonly reason: string;
+			readonly retryAt: number;
+			readonly attempt: number;
+		}
 	/** Gave up after `reconnectAttempts` failures; waits for `retry`. */
 	| { readonly _tag: "Failed"; readonly reason: string }
 	| { readonly _tag: "Paused" };
@@ -145,14 +150,18 @@ const decodeServerMessage = Schema.decodeUnknownEffect(ServerMessageJson);
 const BUN_OPEN_FAILURE = /failed: (.+)$/;
 /** The reconnect reason when the server's address didn't answer at all. */
 export const SERVER_UNREACHABLE = "Couldn't reach the server";
+/** The reconnect reason when the server answered but wouldn't open the worker socket. */
+export const SERVER_REFUSED = "The server refused the connection";
+/** The reconnect reason when the server never finished opening the socket. */
+export const SERVER_TIMED_OUT = "Timed out connecting to the server";
 const OPEN_FAILURES: Record<string, string> = {
 	"Failed to connect": SERVER_UNREACHABLE,
-	"Expected 101 status code": "The server refused the connection",
+	"Expected 101 status code": SERVER_REFUSED,
 };
 
 /** Why the connection didn't open, leaving out the URL: it carries the API key. */
 const openFailure = (reason: Socket.SocketOpenError) => {
-	if (reason.kind === "Timeout") return "Timed out connecting to the server";
+	if (reason.kind === "Timeout") return SERVER_TIMED_OUT;
 	const message = (reason.cause as { message?: unknown } | undefined)?.message;
 	const detail = typeof message === "string" ? BUN_OPEN_FAILURE.exec(message)?.[1] : undefined;
 	if (detail === undefined) return "Couldn't connect to the server";
@@ -562,7 +571,7 @@ export const makeWorker = Effect.fn("makeWorker")(function* (
 				`disconnected (${reason}), reconnecting in ${Duration.format(reconnectDelay)}`,
 			);
 			const retryAt = (yield* Clock.currentTimeMillis) + Duration.toMillis(reconnectDelay);
-			yield* setConnection({ _tag: "Reconnecting", reason, retryAt });
+			yield* setConnection({ _tag: "Reconnecting", reason, retryAt, attempt: failures });
 			// Resuming, pausing or retrying shouldn't wait out the backoff.
 			yield* Effect.raceAll([
 				Effect.sleep(reconnectDelay),
