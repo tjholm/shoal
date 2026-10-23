@@ -1,4 +1,5 @@
 import { Tray } from "electrobun/main";
+import { setStatusItemImage } from "./darwin-status-item";
 import type { TrayIcon, TrayLook } from "./types";
 
 /** Points, the menu bar's icon height. */
@@ -15,8 +16,11 @@ const frameImage = (frame: number) => `views://assets/tray-frames/${frame}.svg`;
 export const createTrayIcon = (): TrayIcon => {
 	const tray = new Tray({ image: stillImage("paused"), template: true, width: SIZE, height: SIZE });
 
+	let shown = tray.image;
 	const setImage = (image: string) => {
-		if (image === tray.image) return;
+		if (image === shown) return;
+		shown = image;
+		if (setStatusItemImage(tray.resolveImagePath(image), SIZE)) return;
 		// Electrobun's setImage drops the template flag and size, but re-showing a
 		// hidden tray rebuilds it from the stored image, flag and size.
 		tray.setVisible(false);
