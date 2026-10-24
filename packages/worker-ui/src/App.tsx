@@ -1,11 +1,11 @@
 import { ShoalGlyph } from "@shoal/ui/components/ShoalMark";
 import { Activity as ActivityIcon, Box, LayoutGrid, Settings as SettingsIcon } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
-import type { WorkerState } from "../shared/rpc";
+import type { HostFeatures, WorkerState } from "@shoal/client-core/host/api";
 import { Activity } from "./Activity";
 import { Models } from "./Models";
 import { Overview } from "./Overview";
-import { onStateChanged, rpc } from "./rpc";
+import { useHost } from "./host";
 import { Settings } from "./Settings";
 import { Setup } from "./Setup";
 import { Dot, STATUS_WORD, statusTone } from "./ui";
@@ -14,16 +14,19 @@ type Page = "overview" | "models" | "activity" | "settings";
 
 export function App() {
 	const [state, setState] = useState<WorkerState | null>(null);
+	const [features, setFeatures] = useState<HostFeatures | null>(null);
 	const [page, setPage] = useState<Page>("overview");
+	const host = useHost();
 
 	useEffect(() => {
-		const offState = onStateChanged(setState);
-		void rpc.request.getState().then(setState);
+		const offState = host.onStateChanged(setState);
+		void host.request.getState().then(setState);
+		void host.request.getFeatures().then(setFeatures);
 		return offState;
-	}, []);
+	}, [host]);
 
-	if (state === null) return null;
-	if (state.status === "not-configured") return <Setup />;
+	if (state === null || features === null) return null;
+	if (state.status === "not-configured") return <Setup features={features} />;
 
 	const modelCount = new Set(state.backends.flatMap((b) => b.models.map((m) => m.id))).size;
 	const nav = (target: Page, icon: ReactNode, label: string, count?: number) => (
@@ -64,7 +67,7 @@ export function App() {
 				{page === "overview" && <Overview state={state} onShowModels={() => setPage("models")} />}
 				{page === "models" && <Models state={state} />}
 				{page === "activity" && <Activity state={state} />}
-				{page === "settings" && <Settings state={state} />}
+				{page === "settings" && <Settings state={state} features={features} />}
 			</main>
 		</div>
 	);

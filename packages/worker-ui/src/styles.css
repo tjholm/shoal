@@ -1,0 +1,2 @@
+/* Import after `@import 'tailwindcss'` and '@shoal/ui/globals.css' in the app's stylesheet. */
+@source '.';

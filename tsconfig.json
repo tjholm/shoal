@@ -10,5 +10,7 @@
     "noEmit": true,
     "types": ["bun-types"]
   },
-  "include": ["apps/cli/**/*.ts", "packages/**/*.ts"]
+  "include": ["apps/cli/**/*.ts", "packages/**/*.ts"],
+  // A browser package with its own tsconfig.
+  "exclude": ["packages/worker-ui"]
 }

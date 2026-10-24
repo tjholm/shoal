@@ -1,6 +1,6 @@
 import { FitNumber } from "@shoal/ui/components/FitNumber";
-import { clock, elapsed } from "../shared/format";
-import type { FinishedJob, WorkerState } from "../shared/rpc";
+import { clock, elapsed } from "./format";
+import type { FinishedJob, WorkerState } from "@shoal/client-core/host/api";
 import { Body, Card, Chip, Dot, Empty, PageTitle, Row, TASK_NAME, type Tone } from "./ui";
 
 const OUTCOME: Record<FinishedJob["outcome"]["_tag"], { label: string; tone: Tone }> = {

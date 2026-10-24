@@ -1,25 +1,15 @@
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Schema } from "effect";
+import type { Availability, SettingsInput, TokenStorage } from "./host/api";
 
-/** What a person enters in a client's settings form, before validation. */
-export interface SettingsInput {
-	readonly serverUrl: string;
-	/** Empty keeps the saved token. */
-	readonly token: string;
-	readonly backends: ReadonlyArray<string>;
-	/** Empty keeps whatever name the server has stored. */
-	readonly name: string;
-	readonly concurrency: number;
-}
+export type { Availability, SettingsInput } from "./host/api";
 
-/** Whether the worker should take work. A pause ends on its own at `pausedUntil` (epoch ms). */
-const Availability = Schema.Union([
+const AvailabilitySchema = Schema.Union([
 	Schema.Literal("on"),
 	Schema.Literal("off"),
 	Schema.Struct({ pausedUntil: Schema.Number }),
 ]);
-export type Availability = typeof Availability.Type;
 
 /** A worker's saved settings. The token is kept in the OS credential store, not here. */
 const SettingsFile = Schema.Struct({
@@ -28,7 +18,7 @@ const SettingsFile = Schema.Struct({
 	backends: Schema.Array(Schema.String),
 	name: Schema.optionalKey(Schema.String),
 	concurrency: Schema.optionalKey(Schema.Number),
-	availability: Schema.optionalKey(Availability),
+	availability: Schema.optionalKey(AvailabilitySchema),
 });
 const SettingsJson = Schema.fromJsonString(SettingsFile);
 
@@ -80,12 +70,14 @@ export const saveSettings = async (dir: string, settings: Settings) => {
 
 /** Where a client keeps its API key for each server. */
 export interface TokenStore {
+	readonly kind: TokenStorage;
 	readonly load: (serverUrl: string) => Promise<string | null>;
 	readonly save: (serverUrl: string, token: string) => Promise<void>;
 }
 
 /** One API key per server under `service`, in the Keychain, libsecret or Windows Credential Manager. Needs Bun. */
 export const credentialStoreTokens = (service: string): TokenStore => ({
+	kind: "credential-store",
 	load: (serverUrl) => Bun.secrets.get({ service, name: serverUrl }),
 	save: (serverUrl, token) => Bun.secrets.set({ service, name: serverUrl, value: token }),
 });

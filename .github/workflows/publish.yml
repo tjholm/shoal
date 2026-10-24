@@ -28,6 +28,7 @@ jobs:
           bunx tsc --noEmit -p apps/api
           bunx tsc --noEmit -p apps/dashboard
           bunx tsc --noEmit -p apps/web
+          bunx tsc --noEmit -p packages/worker-ui
       - name: Test
         run: bun test --pass-with-no-tests
       - name: Test dashboard

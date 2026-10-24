@@ -1,12 +1,13 @@
 import { Button } from "@shoal/ui/components/button";
 import { useState } from "react";
-import type { BackendState, WorkerState } from "../shared/rpc";
-import { rpc } from "./rpc";
+import type { BackendState, WorkerState } from "@shoal/client-core/host/api";
+import { useHost } from "./host";
 import { Body, Card, Chip, DIALECT_NAME, Dot, describeModel, Empty, PageTitle, Row } from "./ui";
 
 /** Every model, grouped by the backend serving it. */
 export function Models({ state }: { state: WorkerState }) {
 	const [error, setError] = useState<string | null>(null);
+	const host = useHost();
 	// Jobs for a model go to the first backend listing it; later copies are never used.
 	const servedEarlier = new Set<string>();
 	return (
@@ -44,7 +45,7 @@ export function Models({ state }: { state: WorkerState }) {
 													variant="outline"
 													size="xs"
 													onClick={async () =>
-														setError(await rpc.request.unloadModel({ backend: backend.url, id: model.id }))
+														setError(await host.request.unloadModel({ backend: backend.url, id: model.id }))
 													}
 												>
 													Unload

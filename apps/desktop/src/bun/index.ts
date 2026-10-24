@@ -1,7 +1,7 @@
 import { BunServices } from "@effect/platform-bun";
 import { createHost } from "@shoal/client-core/host";
 import { BrowserView, BrowserWindow, Updater, Utils } from "electrobun/main";
-import { elapsed, isPaused, rate, statusLabel } from "../shared/format";
+import { elapsed, isPaused, rate, statusLabel } from "@shoal/worker-ui/format";
 import type { ShoalRPC, WorkerState } from "../shared/rpc";
 import { watchLocalNetwork } from "./local-network";
 import { isLaunchAtLogin, setLaunchAtLogin } from "./login";
@@ -71,6 +71,7 @@ const host = await createHost({
 	dir,
 	tokens,
 	platform: BunServices.layer,
+	tray: true,
 	// With 1s doubling backoff, gives up about a minute after the first failure.
 	reconnectAttempts: 6,
 	launchAtLogin: { get: isLaunchAtLogin, set: setLaunchAtLogin },

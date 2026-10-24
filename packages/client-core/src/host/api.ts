@@ -3,11 +3,25 @@
  * can make. Types only, plus pure helpers, so a browser bundle can import it.
  */
 import type { BackendDialect } from "../inference";
-import type { Availability, SettingsInput } from "../settings";
 import type { FinishedJob, RunningJob } from "../worker/run";
 import type { WorkerModel } from "@shoal/protocol";
 
-export type { Availability, SettingsInput } from "../settings";
+/** Whether the worker should take work. A pause ends on its own at `pausedUntil` (epoch ms). */
+export type Availability = "on" | "off" | { readonly pausedUntil: number };
+
+/** What a person enters in a client's settings form, before validation. */
+export interface SettingsInput {
+	readonly serverUrl: string;
+	/** Empty keeps the saved token. */
+	readonly token: string;
+	readonly backends: ReadonlyArray<string>;
+	/** Empty keeps whatever name the server has stored. */
+	readonly name: string;
+	readonly concurrency: number;
+}
+
+/** Where a client keeps its API keys. */
+export type TokenStorage = "credential-store" | "file";
 export type { FinishedJob, JobTask, RunningJob } from "../worker/run";
 
 export type WorkerStatus =
@@ -85,11 +99,22 @@ export interface LoadedModel {
 	readonly id: string;
 }
 
+/** What this client can do, so its UI shows only what applies. */
+export interface HostFeatures {
+	/** Where the API key is kept. */
+	readonly tokenStorage: TokenStorage;
+	/** The client can start itself at login. */
+	readonly launchAtLogin: boolean;
+	/** The client lives in the menu bar or system tray once set up. */
+	readonly tray: boolean;
+}
+
 export const isPaused = (a: Availability): a is { readonly pausedUntil: number } => typeof a === "object";
 
 /** The requests a client's UI makes of its host, by name. A type, not an interface, so RPC libraries can index it. */
 export type HostRequests = {
 	getState: { params: void; response: WorkerState };
+	getFeatures: { params: void; response: HostFeatures };
 	getSettings: { params: void; response: SettingsView | null };
 	saveSettings: { params: SettingsForm; response: SaveResult };
 	setAvailability: { params: Availability; response: void };

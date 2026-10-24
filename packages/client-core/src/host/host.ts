@@ -46,6 +46,8 @@ export interface HostOptions {
 	readonly platform: PlatformLayer;
 	/** Reconnect attempts after a failed connection before the worker waits for a retry; unlimited when absent. */
 	readonly reconnectAttempts?: number;
+	/** The client lives in the menu bar or system tray once set up. */
+	readonly tray?: boolean;
 	/** Present where the client can start itself at login. */
 	readonly launchAtLogin?: {
 		readonly get: () => boolean;
@@ -236,6 +238,11 @@ export const createHost = async (options: HostOptions): Promise<Host> => {
 
 	const handlers: HostHandlers = {
 		getState: () => state(),
+		getFeatures: () => ({
+			tokenStorage: options.tokens.kind,
+			launchAtLogin: options.launchAtLogin !== undefined,
+			tray: options.tray ?? false,
+		}),
 		getSettings: () =>
 			settings && {
 				serverUrl: settings.serverUrl,

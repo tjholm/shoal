@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { App } from "./App";
+import { WorkerApp } from "@shoal/worker-ui";
+import { host } from "./rpc";
 import "./styles.css";
 
 const lightScheme = window.matchMedia("(prefers-color-scheme: light)");
@@ -10,6 +11,6 @@ lightScheme.addEventListener("change", (event) => {
 
 createRoot(document.getElementById("app") as HTMLElement).render(
 	<StrictMode>
-		<App />
+		<WorkerApp host={host} />
 	</StrictMode>,
 );

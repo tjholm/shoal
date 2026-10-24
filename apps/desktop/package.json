@@ -14,6 +14,7 @@
 		"@shoal/client-core": "workspace:*",
 		"@shoal/protocol": "workspace:*",
 		"@shoal/ui": "workspace:*",
+		"@shoal/worker-ui": "workspace:*",
 		"effect": "4.0.3",
 		"lucide-react": "^1.14.0",
 		"react": "^19.2.0",

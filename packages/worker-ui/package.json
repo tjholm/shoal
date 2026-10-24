@@ -1,0 +1,24 @@
+{
+  "name": "@shoal/worker-ui",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./format": "./src/format.ts",
+    "./styles.css": "./src/styles.css"
+  },
+  "dependencies": {
+    "@shoal/client-core": "workspace:*",
+    "@shoal/protocol": "workspace:*",
+    "@shoal/ui": "workspace:*",
+    "lucide-react": "^1.14.0"
+  },
+  "peerDependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0"
+  }
+}

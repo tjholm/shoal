@@ -2,22 +2,23 @@ import { Button } from "@shoal/ui/components/button";
 import { Input } from "@shoal/ui/components/input";
 import { Lock, Minus, Plus, X } from "lucide-react";
 import { type FormEvent, type ReactNode, useEffect, useId, useState } from "react";
-import type { SettingsView, WorkerState } from "../shared/rpc";
+import type { HostFeatures, SettingsView, WorkerState } from "@shoal/client-core/host/api";
 import { BackendChip } from "./Models";
-import { rpc } from "./rpc";
-import { Body, Card, DIALECT_NAME, Empty, PageTitle, SectionTitle } from "./ui";
+import { useHost } from "./host";
+import { Body, Card, DIALECT_NAME, Empty, PageTitle, SectionTitle, TOKEN_STORAGE } from "./ui";
 
 let nextRowId = 0;
 const row = (value: string) => ({ id: nextRowId++, value });
 
-export function Settings({ state }: { state: WorkerState }) {
+export function Settings({ state, features }: { state: WorkerState; features: HostFeatures }) {
 	const [saved, setSaved] = useState<SettingsView | null | undefined>(undefined);
 	// Bumped to rebuild the form from the saved settings.
 	const [version, setVersion] = useState(0);
+	const host = useHost();
 
 	useEffect(() => {
-		void rpc.request.getSettings().then(setSaved);
-	}, [version]);
+		void host.request.getSettings().then(setSaved);
+	}, [host, version]);
 
 	// The form reads `saved` only when it mounts, so it mustn't remount until
 	// the fresh settings arrive.
@@ -28,10 +29,20 @@ export function Settings({ state }: { state: WorkerState }) {
 
 	// Wait for the saved settings so the form starts from them, not blanks.
 	if (saved === undefined || saved === null) return null;
-	return <SettingsForm key={version} saved={saved} state={state} onReload={reload} />;
+	return <SettingsForm key={version} saved={saved} state={state} features={features} onReload={reload} />;
 }
 
-function SettingsForm({ saved, state, onReload }: { saved: SettingsView; state: WorkerState; onReload: () => void }) {
+function SettingsForm({
+	saved,
+	state,
+	features,
+	onReload,
+}: {
+	saved: SettingsView;
+	state: WorkerState;
+	features: HostFeatures;
+	onReload: () => void;
+}) {
 	const [serverUrl, setServerUrl] = useState(saved.serverUrl);
 	const [replacingToken, setReplacingToken] = useState(!saved.hasToken);
 	const [token, setToken] = useState("");
@@ -41,11 +52,12 @@ function SettingsForm({ saved, state, onReload }: { saved: SettingsView; state: 
 	const [launchAtLogin, setLaunchAtLogin] = useState(saved.launchAtLogin);
 	const [errors, setErrors] = useState<ReadonlyArray<string>>([]);
 	const [saving, setSaving] = useState(false);
+	const host = useHost();
 
 	const submit = async (event: FormEvent) => {
 		event.preventDefault();
 		setSaving(true);
-		const result = await rpc.request.saveSettings({
+		const result = await host.request.saveSettings({
 			serverUrl,
 			token: replacingToken ? token : "",
 			backends: backends.map((b) => b.value),
@@ -93,7 +105,7 @@ function SettingsForm({ saved, state, onReload }: { saved: SettingsView; state: 
 									<div className="flex items-center gap-2.5">
 										<div id={id} className="flex h-10 flex-1 items-center gap-2 rounded-sm border border-line bg-trench px-3 text-[13px] text-mist">
 											<Lock size={14} className="text-lumen" aria-hidden="true" />
-											Saved in your system's credential store
+											Saved in {TOKEN_STORAGE[features.tokenStorage]}
 										</div>
 										<Button type="button" variant="outline" size="sm" onClick={() => setReplacingToken(true)}>
 											Replace…
@@ -174,6 +186,7 @@ function SettingsForm({ saved, state, onReload }: { saved: SettingsView; state: 
 							</button>
 						</div>
 					</Option>
+					{features.launchAtLogin && (
 					<Option title="Launch at login" caption="Starts in the menu bar">
 						<button
 							type="button"
@@ -186,6 +199,7 @@ function SettingsForm({ saved, state, onReload }: { saved: SettingsView; state: 
 							<span className="size-[18px] rounded-full bg-abyss" />
 						</button>
 					</Option>
+					)}
 				</section>
 
 				{errors.length > 0 && (

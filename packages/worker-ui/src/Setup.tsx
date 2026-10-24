@@ -3,12 +3,12 @@ import { Input } from "@shoal/ui/components/input";
 import { ShoalGlyph } from "@shoal/ui/components/ShoalMark";
 import { Lock } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
-import type { BackendState } from "../shared/rpc";
-import { rpc } from "./rpc";
-import { DIALECT_NAME, hostOf } from "./ui";
+import type { BackendState, HostFeatures } from "@shoal/client-core/host/api";
+import { useHost } from "./host";
+import { DIALECT_NAME, hostOf, TOKEN_STORAGE } from "./ui";
 
 /** First run: join this computer to a shoal server. */
-export function Setup() {
+export function Setup({ features }: { features: HostFeatures }) {
 	const [serverUrl, setServerUrl] = useState("");
 	const [token, setToken] = useState("");
 	const [found, setFound] = useState<ReadonlyArray<BackendState> | null>(null);
@@ -16,14 +16,15 @@ export function Setup() {
 	const [other, setOther] = useState("");
 	const [errors, setErrors] = useState<ReadonlyArray<string>>([]);
 	const [saving, setSaving] = useState(false);
+	const host = useHost();
 
 	useEffect(() => {
-		void rpc.request.detectBackends().then((backends) => {
+		void host.request.detectBackends().then((backends) => {
 			const reachable = backends.filter((b) => b.dialect !== null);
 			setFound(reachable);
 			setChosen(new Set(reachable.map((b) => b.url)));
 		});
-	}, []);
+	}, [host]);
 
 	const toggle = (url: string) =>
 		setChosen((current) => {
@@ -35,7 +36,7 @@ export function Setup() {
 	const submit = async (event: FormEvent) => {
 		event.preventDefault();
 		setSaving(true);
-		const result = await rpc.request.saveSettings({
+		const result = await host.request.saveSettings({
 			serverUrl,
 			token,
 			backends: [...chosen, other],
@@ -56,7 +57,7 @@ export function Setup() {
 					</span>
 					<h1 className="m-0 text-[26px] font-semibold tracking-[-0.02em]">Join this computer to your shoal</h1>
 					<p className="m-0 text-sm leading-normal text-mist">
-						It serves jobs from the models you run locally, and lives in the menu bar once connected.
+						It serves jobs from the models you run locally{features.tray ? ", and lives in the menu bar once connected" : ""}.
 					</p>
 				</div>
 
@@ -69,7 +70,7 @@ export function Setup() {
 					<Input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="Paste an API key" className="font-mono" autoComplete="off" />
 					<span className="flex items-center gap-1.5 text-xs text-silt">
 						<Lock size={12} aria-hidden="true" />
-						Kept in your system's credential store, never in a file or your shell history.
+						Kept in {TOKEN_STORAGE[features.tokenStorage]}, never in your shell history.
 					</span>
 				</label>
 

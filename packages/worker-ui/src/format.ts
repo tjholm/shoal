@@ -1,5 +1,4 @@
-import { isPaused } from "@shoal/client-core/host/api";
-import type { WorkerState } from "./rpc";
+import { isPaused, type WorkerState } from "@shoal/client-core/host/api";
 
 export { isPaused };
 

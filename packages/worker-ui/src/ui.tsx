@@ -1,7 +1,7 @@
 import type { BackendDialect } from "@shoal/client-core/inference";
 import type { WorkerModel } from "@shoal/protocol";
 import { type ReactNode, useEffect, useState } from "react";
-import type { JobTask, WorkerState } from "../shared/rpc";
+import type { HostFeatures, JobTask, WorkerState } from "@shoal/client-core/host/api";
 
 export type Tone = "lumen" | "amber" | "coral" | "current" | "silt";
 
@@ -134,3 +134,9 @@ export const useNow = (intervalMs = 1000) => {
 };
 
 export const hostOf = (url: string | null) => (url === null ? "" : new URL(url).host);
+
+/** Where the API key is kept, finishing "Kept in" or "Saved in". */
+export const TOKEN_STORAGE: Record<HostFeatures["tokenStorage"], string> = {
+	"credential-store": "your system's credential store",
+	file: "a file only you can read",
+};
