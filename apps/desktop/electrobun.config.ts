@@ -34,6 +34,8 @@ export default {
 			"assets/tray-template-paused.svg": "views/assets/tray-template-paused.svg",
 			"assets/tray-warning.svg": "views/assets/tray-warning.svg",
 			"assets/tray-template-warning.svg": "views/assets/tray-template-warning.svg",
+			// Rendered by scripts/icon.ts.
+			"assets/tray-frames": "views/assets/tray-frames",
 			// The Windows tray loads only .ico files; scripts/icon.ts renders them.
 			"assets/tray-sharing.ico": "views/assets/tray-sharing.ico",
 			"assets/tray-paused.ico": "views/assets/tray-paused.ico",

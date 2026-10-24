@@ -6,9 +6,11 @@
  * - assets/icon.ico: the Windows app icon (installer, shortcuts, taskbar).
  * - assets/icon.png: the Linux app icon (desktop entry, window, taskbar).
  * - assets/tray-*.ico: Windows tray icons; the Windows tray can't load SVGs.
+ * - assets/tray-frames: the macOS tray icon turned step by step, shown in turn while jobs run.
  */
 import { mkdirSync } from "node:fs";
 import { Resvg } from "@resvg/resvg-js";
+import { TRAY_FRAME_DEGREES, TRAY_FRAMES } from "../src/bun/tray/frames";
 
 const ICONSET = "assets/icon.iconset";
 
@@ -56,4 +58,14 @@ await Bun.write("assets/icon.ico", ico(windowsAppIcon, [16, 24, 32, 48, 64, 256]
 for (const state of ["paused", "sharing", "warning"]) {
 	const tray = await Bun.file(`assets/tray-${state}.svg`).text();
 	await Bun.write(`assets/tray-${state}.ico`, ico(tray, [16, 20, 24, 32, 40, 48]));
+}
+
+const sharing = await Bun.file("assets/tray-template-sharing.svg").text();
+mkdirSync("assets/tray-frames", { recursive: true });
+for (let frame = 0; frame < TRAY_FRAMES; frame++) {
+	const degrees = TRAY_FRAME_DEGREES * frame;
+	await Bun.write(
+		`assets/tray-frames/${frame}.svg`,
+		sharing.replace("<g ", `<g transform="rotate(${degrees} 12 12)" `),
+	);
 }

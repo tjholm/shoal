@@ -13,6 +13,7 @@ import { elapsed, isPaused, rate, statusLabel } from "../shared/format";
 import type { BackendState, ShoalRPC, WorkerState } from "../shared/rpc";
 import { watchLocalNetwork } from "./local-network";
 import { isLaunchAtLogin, setLaunchAtLogin } from "./login";
+import { loadPreferences, savePreferences } from "./preferences";
 import { installAppMenu, setDockIconVisible } from "./shell";
 import { claimSingleInstance } from "./single-instance";
 import { store } from "./store";
@@ -82,6 +83,7 @@ const openWindow = () => {
 if (!(await claimSingleInstance(openWindow))) process.exit(0);
 
 let settings: Settings | null = await loadSettings(store);
+let preferences = await loadPreferences();
 let token: string | null = settings && (await loadToken(store, settings.serverUrl));
 let worker: RunningWorker | null = null;
 let snapshot: WorkerSnapshot | null = null;
@@ -229,6 +231,9 @@ const trayMenu = (state: WorkerState, detail: string | null): Array<MenuItem> =>
 		separator,
 		...availabilityItems,
 		separator,
+		...(trayIcon.spin
+			? [item("Animate while working", "animate", { checked: preferences.animateTray }), separator]
+			: []),
 		item("Open Shoal…", "open"),
 		...(settings ? [item("Open dashboard", "dashboard")] : []),
 		separator,
@@ -271,6 +276,7 @@ const changed = () => {
 		pushTimer = null;
 		const state = workerState();
 		window?.rpc.send.stateChanged(state);
+		trayIcon.spin?.(preferences.animateTray && state.status === "online" && state.jobs.length > 0);
 		renderTray(state);
 	}, 100);
 };
@@ -320,6 +326,12 @@ const setAvailability = async (next: Availability) => {
 	changed();
 };
 
+const setAnimateTray = async (on: boolean) => {
+	preferences = { ...preferences, animateTray: on };
+	await savePreferences(preferences);
+	changed();
+};
+
 const extendPause = (minutes: number) => {
 	const current = availability();
 	const from = isPaused(current) ? current.pausedUntil : Date.now();
@@ -344,6 +356,8 @@ tray.on("tray-clicked", (event) => {
 			return worker?.retry();
 		case "local-network":
 			return localNetwork.openSettings();
+		case "animate":
+			return setAnimateTray(!preferences.animateTray);
 		case "open":
 			return openWindow();
 		case "dashboard":
