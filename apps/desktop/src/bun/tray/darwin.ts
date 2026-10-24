@@ -1,11 +1,10 @@
 import { Tray } from "electrobun/main";
 import { setStatusItemImage } from "./darwin-status-item";
+import { TRAY_FRAMES } from "./frames";
 import type { TrayIcon, TrayLook } from "./types";
 
 /** Points, the menu bar's icon height. */
 const SIZE = 18;
-// Matches TRAY_FRAMES in scripts/icon.ts, which renders the frames.
-const TRAY_FRAMES = 24;
 // 5° a frame at 25 frames a second: a turn of the three fish each second.
 const FRAME_MS = 40;
 

@@ -29,7 +29,6 @@ const SettingsFile = Schema.Struct({
 	name: Schema.optionalKey(Schema.String),
 	concurrency: Schema.optionalKey(Schema.Number),
 	availability: Schema.optionalKey(Availability),
-	animateTray: Schema.optionalKey(Schema.Boolean),
 });
 const SettingsJson = Schema.fromJsonString(SettingsFile);
 
@@ -39,8 +38,6 @@ export interface Settings {
 	readonly name: string;
 	readonly concurrency: number;
 	readonly availability: Availability;
-	/** Spin the tray icon while jobs are running. */
-	readonly animateTray: boolean;
 }
 
 /** Where a client keeps its settings file, and the credential store service its API keys go under. */
@@ -76,7 +73,6 @@ export const loadSettings = async (store: SettingsStore): Promise<Settings | nul
 		name: saved.name ?? "",
 		concurrency: saved.concurrency ?? 1,
 		availability: saved.availability ?? "on",
-		animateTray: saved.animateTray ?? false,
 	};
 };
 
@@ -138,7 +134,6 @@ export const validateSettings = (
 			name: input.name.trim(),
 			concurrency: input.concurrency,
 			availability: saved?.availability ?? "on",
-			animateTray: saved?.animateTray ?? false,
 		},
 		token: input.token.trim() || null,
 	};

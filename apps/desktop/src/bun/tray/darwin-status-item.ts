@@ -8,21 +8,25 @@
  * makes an animation all but invisible. Remove this once Electrobun's
  * setTrayImage keeps the flag.
  */
-import { dlopen, FFIType, type Pointer, ptr } from "bun:ffi";
+import { dlopen, FFIType, type Pointer } from "bun:ffi";
 
 const LIBOBJC = "/usr/lib/libobjc.A.dylib";
 
 // objc_msgSend takes whatever arguments the method does, so each shape it's
 // called with needs its own binding.
 const runtime = dlopen(LIBOBJC, {
-	objc_getClass: { args: [FFIType.cstring], returns: FFIType.ptr },
-	sel_registerName: { args: [FFIType.cstring], returns: FFIType.ptr },
+	// Taking ptr rather than cstring lets callers pass a Buffer, which Bun keeps alive for the call.
+	objc_getClass: { args: [FFIType.ptr], returns: FFIType.ptr },
+	sel_registerName: { args: [FFIType.ptr], returns: FFIType.ptr },
 	object_getClassName: { args: [FFIType.ptr], returns: FFIType.cstring },
 }).symbols;
 const send = dlopen(LIBOBJC, { objc_msgSend: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.ptr } }).symbols
 	.objc_msgSend;
 const sendPtr = dlopen(LIBOBJC, {
 	objc_msgSend: { args: [FFIType.ptr, FFIType.ptr, FFIType.ptr], returns: FFIType.ptr },
+}).symbols.objc_msgSend;
+const sendPtrForBool = dlopen(LIBOBJC, {
+	objc_msgSend: { args: [FFIType.ptr, FFIType.ptr, FFIType.ptr], returns: FFIType.bool },
 }).symbols.objc_msgSend;
 const sendU64 = dlopen(LIBOBJC, {
 	objc_msgSend: { args: [FFIType.ptr, FFIType.ptr, FFIType.u64], returns: FFIType.ptr },
@@ -41,8 +45,16 @@ const sendOnMain = dlopen(LIBOBJC, {
 	},
 }).symbols.objc_msgSend;
 
-const cString = (text: string) => ptr(Buffer.from(`${text}\0`));
-const selector = (name: string) => runtime.sel_registerName(cString(name)) as Pointer;
+const cString = (text: string) => Buffer.from(`${text}\0`);
+const selectors = new Map<string, Pointer>();
+const selector = (name: string) => {
+	let found = selectors.get(name);
+	if (!found) {
+		found = runtime.sel_registerName(cString(name)) as Pointer;
+		selectors.set(name, found);
+	}
+	return found;
+};
 const objcClass = (name: string) => runtime.objc_getClass(cString(name)) as Pointer;
 const nsString = (text: string) =>
 	sendPtr(objcClass("NSString"), selector("stringWithUTF8String:"), cString(text)) as Pointer;
@@ -55,8 +67,14 @@ const findTrayButton = (): Pointer | null => {
 	for (let i = 0; i < count; i++) {
 		const window = sendU64(windows, selector("objectAtIndex:"), i) as Pointer;
 		if (runtime.object_getClassName(window).toString() !== "NSStatusBarWindow") continue;
-		const item = sendPtr(window, selector("valueForKey:"), nsString("statusItem")) as Pointer | null;
-		if (item) return send(item, selector("button")) as Pointer;
+		// statusItem is private. Asking first, instead of using valueForKey:, means a
+		// macOS without it falls back: an Objective-C exception would crash the app.
+		if (!sendPtrForBool(window, selector("respondsToSelector:"), selector("statusItem"))) continue;
+		const item = send(window, selector("statusItem")) as Pointer | null;
+		if (!item) continue;
+		const button = send(item, selector("button")) as Pointer | null;
+		// Retained so the pointer stays valid even if Electrobun replaces the status item.
+		if (button) return send(button, selector("retain")) as Pointer;
 	}
 	return null;
 };
@@ -78,11 +96,21 @@ const templateImage = (file: string, size: number) => {
 };
 
 let button: Pointer | null = null;
+let warned = false;
 
 /** Shows `file` in the tray at once, as a template image; false when the tray button can't be found. */
 export const setStatusItemImage = (file: string, size: number) => {
+	// A button no longer in a window belongs to a status item that's been replaced.
+	if (button && !send(button, selector("window"))) {
+		send(button, selector("release"));
+		button = null;
+	}
 	button ??= findTrayButton();
-	if (!button) return false;
+	if (!button) {
+		if (!warned) console.warn("Couldn't find the tray's status item button; tray image changes will blink.");
+		warned = true;
+		return false;
+	}
 	// AppKit views belong to the main thread, and the app's JavaScript runs on another.
 	sendOnMain(button, selector("performSelectorOnMainThread:withObject:waitUntilDone:"), selector("setImage:"), templateImage(file, size), false);
 	return true;

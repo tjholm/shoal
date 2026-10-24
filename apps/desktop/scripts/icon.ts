@@ -10,6 +10,7 @@
  */
 import { mkdirSync } from "node:fs";
 import { Resvg } from "@resvg/resvg-js";
+import { TRAY_FRAME_DEGREES, TRAY_FRAMES } from "../src/bun/tray/frames";
 
 const ICONSET = "assets/icon.iconset";
 
@@ -59,12 +60,10 @@ for (const state of ["paused", "sharing", "warning"]) {
 	await Bun.write(`assets/tray-${state}.ico`, ico(tray, [16, 20, 24, 32, 40, 48]));
 }
 
-// The three fish repeat every 120°, so turning through 120° loops seamlessly.
-const TRAY_FRAMES = 24; // Matches TRAY_FRAMES in src/bun/tray/darwin.ts.
 const sharing = await Bun.file("assets/tray-template-sharing.svg").text();
 mkdirSync("assets/tray-frames", { recursive: true });
 for (let frame = 0; frame < TRAY_FRAMES; frame++) {
-	const degrees = (120 / TRAY_FRAMES) * frame;
+	const degrees = TRAY_FRAME_DEGREES * frame;
 	await Bun.write(
 		`assets/tray-frames/${frame}.svg`,
 		sharing.replace("<g ", `<g transform="rotate(${degrees} 12 12)" `),
