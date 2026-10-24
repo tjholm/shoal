@@ -9,9 +9,10 @@ Workers run wherever you have GPUs (your desktop, a homelab box, a rented server
 - `apps/api` — the server, an Effect HTTP server on Bun: the OpenAI/Anthropic-compatible API, the worker WebSocket, auth, the dashboard's API, and background jobs. Serves the built dashboard in production.
 - `apps/dashboard` — the dashboard, a Vite + TanStack Router single-page app. In development it proxies `/api` and `/ws` to `apps/api`.
 - `apps/web` — marketing / landing site.
-- `apps/cli` — the `shoal` CLI, built on Effect. `shoal worker start` connects a local worker to a server.
+- `apps/cli` — the `shoal` CLI, built on Effect. `shoal worker start` connects a local worker to a server, and `--ui` serves a page for managing it.
 - `apps/desktop` — an optional tray app ([Electrobun](https://framework.blackboard.sh/electrobun/)) that runs a worker on a desktop and lets you pause it or unload models.
-- `packages/client-core` — the worker itself (server connection, backend discovery, inference proxying, unloading), shared by the CLI and the desktop app.
+- `packages/client-core` — the worker itself (server connection, backend discovery, inference proxying, unloading) and the host that runs it from saved settings, shared by the CLI and the desktop app.
+- `packages/worker-ui` — the worker's pages, shown in the desktop app's window and served by `shoal worker start --ui`.
 - `packages/ui` — the design system (theme, shadcn components) shared by the dashboard and the desktop app.
 - `packages/protocol` — the worker ↔ server WebSocket protocol, as Effect Schemas.
 - `packages/contracts` — the dashboard API (an Effect HttpApi) shared by `apps/api` and `apps/dashboard`.
@@ -65,15 +66,45 @@ It needs Node 22 or later. The token is an API key from the dashboard.
 
 | Flag | Default | |
 |---|---|---|
-| `--server` | (required) | The server's worker socket: `SHOAL_URL` with `ws://` or `wss://` and `/ws/workers` |
-| `--token` | `SHOAL_TOKEN` | API key the worker connects with |
-| `--backend` | `BACKEND_URL`, else `http://localhost:11434` | Model server URL; repeat or comma-separate for several |
-| `--concurrency` | `1` | Jobs the worker runs at once |
+| `--server` | the saved server | The server's web address, or its worker socket (`ws://` or `wss://` and `/ws/workers`) |
+| `--token` | `SHOAL_TOKEN`, else the saved key | API key the worker connects with |
+| `--backend` | `BACKEND_URL`, else the saved backends, else `http://localhost:11434` | Model server URL; repeat or comma-separate for several |
+| `--concurrency` | the saved setting, else `1` | Jobs the worker runs at once |
 | `--name` | | Name shown in the dashboard; overrides a rename made there |
 
 Ollama, LM Studio, llama.cpp, llama-swap, vLLM and Lemonade all work, as does
 any other OpenAI-compatible server. The worker connects out to shoal, so the
 worker's machine needs no open ports.
+
+### Managing a worker from a browser
+
+`--ui` serves the same pages as the desktop app, for watching the worker,
+pausing it, unloading models and changing its settings. It can start before
+anything is set up and walk you through it:
+
+```bash
+npx @shoal.school/cli worker start --ui
+```
+
+Settings saved there go in `SHOAL_HOME` (default `~/.local/state/shoal`), and
+the API key in `tokens.json` beside them, readable only by you. Flags win over
+saved settings, and the page shows those fields as set by their flag.
+
+The page asks for an access token: the terminal prints a link that includes it,
+and it's kept in `SHOAL_HOME/ui-token` (or set `SHOAL_UI_TOKEN`).
+
+| Flag | Default | |
+|---|---|---|
+| `--ui-host` | `SHOAL_UI_HOST`, else `127.0.0.1` | Address to listen on |
+| `--ui-port` | `SHOAL_UI_PORT`, else `7337` | Port to listen on |
+| `--ui-tls-cert`, `--ui-tls-key` | | Serve HTTPS with this PEM certificate and key |
+| `--ui-insecure` | | Allow plain HTTP beyond loopback, when TLS ends at a proxy or tunnel in front |
+
+To manage a worker on another machine, listen on an address you can reach
+with a certificate, or keep the default and use an SSH tunnel
+(`ssh -L 7337:127.0.0.1:7337 worker-host`). Anything but loopback without TLS
+is refused unless you pass `--ui-insecure`, since the access token and API
+keys would cross the network unencrypted.
 
 ## Development
 
