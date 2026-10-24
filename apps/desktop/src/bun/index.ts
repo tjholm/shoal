@@ -7,14 +7,14 @@ import {
 	saveToken,
 	validateSettings,
 } from "@shoal/client-core/settings";
-import type { WorkerSnapshot } from "@shoal/client-core/worker";
+import { SERVER_REFUSED, SERVER_TIMED_OUT, SERVER_UNREACHABLE, type WorkerSnapshot } from "@shoal/client-core/worker";
 import { ApplicationMenu, BrowserView, BrowserWindow, Tray, Updater, Utils } from "electrobun/main";
 import { elapsed, isPaused, rate, statusLabel } from "../shared/format";
 import type { BackendState, ShoalRPC, WorkerState } from "../shared/rpc";
 import { isLaunchAtLogin, setLaunchAtLogin } from "./login";
 import { claimSingleInstance } from "./single-instance";
 import { store } from "./store";
-import { probeBackends, type RunningWorker, startWorker, toBackendState } from "./worker";
+import { probeBackends, RECONNECT_ATTEMPTS, type RunningWorker, startWorker, toBackendState } from "./worker";
 
 /** Where local model servers usually listen, probed on first run. */
 const LOCAL_BACKENDS = [
@@ -106,6 +106,22 @@ const notProbed = (url: string): BackendState => ({
 	error: null,
 });
 
+/** The worker's reason for a failed connection, as a sentence naming the server. */
+const describeProblem = (reason: string) => {
+	const server = settings ? new URL(settings.serverUrl).host : "The server";
+	switch (reason) {
+		case SERVER_UNREACHABLE:
+			return `${server} didn't answer.`;
+		case SERVER_REFUSED:
+			return `${server} refused the connection.`;
+		case SERVER_TIMED_OUT:
+			return `${server} took too long to answer.`;
+		default:
+			// Close codes such as 1006 when an open connection drops.
+			return /^\d{4}\b/.test(reason) ? `The connection to ${server} dropped (${reason}).` : `${reason}.`;
+	}
+};
+
 const workerState = (): WorkerState => {
 	const wanted = availability();
 	const connection = snapshot?.connection;
@@ -122,15 +138,18 @@ const workerState = (): WorkerState => {
 							? "online"
 							: connection?._tag === "Reconnecting"
 								? "reconnecting"
-								: "connecting";
+								: connection?._tag === "Failed"
+									? "failed"
+									: "connecting";
+	const disconnected = (status === "reconnecting" || status === "failed") && connection?._tag !== "Connected";
+	const reason =
+		disconnected && (connection?._tag === "Reconnecting" || connection?._tag === "Failed") ? connection.reason : null;
 	return {
 		status,
-		detail:
-			status === "stopped"
-				? stoppedReason
-				: status === "reconnecting" && connection?._tag === "Reconnecting"
-					? connection.reason
-					: null,
+		detail: status === "stopped" ? stoppedReason : reason === null ? null : describeProblem(reason),
+		retryAt: status === "reconnecting" && connection?._tag === "Reconnecting" ? connection.retryAt : null,
+		attempt: status === "reconnecting" && connection?._tag === "Reconnecting" ? connection.attempt : null,
+		maxAttempts: RECONNECT_ATTEMPTS,
 		availability: wanted,
 		serverUrl: settings?.serverUrl ?? null,
 		name: settings?.name ?? "",
@@ -201,6 +220,8 @@ const trayDetail = (state: WorkerState) => {
 	if (isPaused(state.availability)) {
 		return `${elapsed(state.availability.pausedUntil - Date.now())} left`;
 	}
+	// The title line counts down; this one names the problem, which menus show without a full stop.
+	if (state.status === "reconnecting" || state.status === "failed") return state.detail?.replace(/\.$/, "") ?? null;
 	if (state.status !== "online" || state.jobs.length === 0) return state.detail;
 	return state.jobs
 		.slice(0, 2)
@@ -210,6 +231,10 @@ const trayDetail = (state: WorkerState) => {
 		})
 		.join(", ");
 };
+
+/** The menu's first line: the status, counting down while a reconnect is due. */
+const trayTitle = (state: WorkerState) =>
+	state.retryAt !== null ? `Reconnecting in ${elapsed(Math.max(0, state.retryAt - Date.now()))}` : statusLabel(state);
 
 type MenuItem = Parameters<typeof tray.setMenu>[0][number];
 const item = (label: string, action: string | null, extra: Partial<MenuItem> = {}): MenuItem =>
@@ -234,9 +259,15 @@ const trayMenu = (state: WorkerState, detail: string | null): Array<MenuItem> =>
 					? [item("Pause for", null, { enabled: controls, submenu: durations("pause", PAUSES) })]
 					: []),
 			];
+	// Under the status they act on.
+	const connectionItems = [
+		...(state.status === "failed" ? [item("Try Again", "retry")] : []),
+		...(state.status === "reconnecting" ? [item("Try Now", "retry")] : []),
+	];
 	return [
-		item(statusLabel(state), null, { enabled: false }),
+		item(trayTitle(state), null, { enabled: false }),
 		...(detail ? [item(detail, null, { enabled: false })] : []),
+		...connectionItems,
 		separator,
 		...availabilityItems,
 		separator,
@@ -353,6 +384,8 @@ tray.on("tray-clicked", (event) => {
 			return setAvailability("on");
 		case "stay-off":
 			return setAvailability("off");
+		case "retry":
+			return worker?.retry();
 		case "open":
 			return openWindow();
 		case "dashboard":
@@ -397,6 +430,7 @@ function createRpc() {
 					return { ok: true };
 				},
 				setAvailability: (next) => setAvailability(next),
+				retryConnection: () => worker?.retry(),
 				detectBackends: () => probeBackends(LOCAL_BACKENDS),
 				unloadModel: async (model) =>
 					(await worker?.unload(model.backend, model.id)) ?? "Shoal isn't running.",

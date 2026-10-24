@@ -55,6 +55,8 @@ export interface WorkerOptions {
 	readonly name: Option.Option<string>;
 	/** Start without connecting, as if `pause` had been called. */
 	readonly paused?: boolean;
+	/** Failed connections in a row before giving up until `retry`; unlimited when absent. */
+	readonly reconnectAttempts?: number;
 }
 
 /** The worker's link to the server. A paused worker is disconnected on
@@ -62,7 +64,15 @@ export interface WorkerOptions {
 export type WorkerConnection =
 	| { readonly _tag: "Connecting" }
 	| { readonly _tag: "Connected"; readonly workerId: string }
-	| { readonly _tag: "Reconnecting"; readonly reason: string }
+	/** `retryAt` is when the next attempt starts, epoch ms; `attempt` counts from 1 since the last connection. */
+	| {
+			readonly _tag: "Reconnecting";
+			readonly reason: string;
+			readonly retryAt: number;
+			readonly attempt: number;
+		}
+	/** Gave up after `reconnectAttempts` failures; waits for `retry`. */
+	| { readonly _tag: "Failed"; readonly reason: string }
 	| { readonly _tag: "Paused" };
 
 export type JobTask = InferMessage["task"];
@@ -118,6 +128,8 @@ export interface Worker {
 	/** Disconnect at once, abandoning running jobs. */
 	readonly pause: Effect.Effect<void>;
 	readonly resume: Effect.Effect<void>;
+	/** Connect now, skipping any backoff, and again after giving up. */
+	readonly retry: Effect.Effect<void>;
 	unload(
 		backendUrl: string,
 		model: string,
@@ -134,6 +146,28 @@ const decodeServerMessage = Schema.decodeUnknownEffect(ServerMessageJson);
 
 /** Connect to the Shoal server and serve inference jobs until the server
  *  rejects our credentials. */
+/** Bun's WebSocket error events read "WebSocket connection to '<url>' failed: <reason>". */
+const BUN_OPEN_FAILURE = /failed: (.+)$/;
+/** The reconnect reason when the server's address didn't answer at all. */
+export const SERVER_UNREACHABLE = "Couldn't reach the server";
+/** The reconnect reason when the server answered but wouldn't open the worker socket. */
+export const SERVER_REFUSED = "The server refused the connection";
+/** The reconnect reason when the server never finished opening the socket. */
+export const SERVER_TIMED_OUT = "Timed out connecting to the server";
+const OPEN_FAILURES: Record<string, string> = {
+	"Failed to connect": SERVER_UNREACHABLE,
+	"Expected 101 status code": SERVER_REFUSED,
+};
+
+/** Why the connection didn't open, leaving out the URL: it carries the API key. */
+const openFailure = (reason: Socket.SocketOpenError) => {
+	if (reason.kind === "Timeout") return SERVER_TIMED_OUT;
+	const message = (reason.cause as { message?: unknown } | undefined)?.message;
+	const detail = typeof message === "string" ? BUN_OPEN_FAILURE.exec(message)?.[1] : undefined;
+	if (detail === undefined) return "Couldn't connect to the server";
+	return OPEN_FAILURES[detail] ?? `Couldn't connect to the server: ${detail}`;
+};
+
 export const runWorker = (options: WorkerOptions) =>
 	makeWorker(options).pipe(
 		Effect.flatMap((worker) => worker.join),
@@ -141,7 +175,8 @@ export const runWorker = (options: WorkerOptions) =>
 	);
 
 /** Start a worker in the current scope. Disconnects are retried with
- *  exponential backoff, reset after every successful connect. Backends are
+ *  exponential backoff, reset after every successful connect, up to
+ *  `reconnectAttempts` times in a row. Backends are
  *  probed every 10s whether or not the worker is connected, so residency
  *  stays current while paused. */
 export const makeWorker = Effect.fn("makeWorker")(function* (
@@ -151,6 +186,15 @@ export const makeWorker = Effect.fn("makeWorker")(function* (
 	const identityStore = yield* IdentityStore;
 
 	const paused = yield* SubscriptionRef.make(options.paused ?? false);
+	const retryRequests = yield* SubscriptionRef.make(0);
+	/** Waits for a `retry` after the one that made `seen` the count, so one
+	 *  requested before the wait began still counts. */
+	const whenRetriedSince = (seen: number) =>
+		SubscriptionRef.changes(retryRequests).pipe(
+			Stream.filter((n) => n !== seen),
+			Stream.runHead,
+			Effect.asVoid,
+		);
 	const snapshot = yield* SubscriptionRef.make<WorkerSnapshot>({
 		connection: { _tag: "Connecting" },
 		jobs: [],
@@ -469,15 +513,22 @@ export const makeWorker = Effect.fn("makeWorker")(function* (
 			yield* Effect.raceFirst(serve, whenPaused(true));
 		}).pipe(Effect.scoped);
 
-	const closeDetail = (err: Socket.SocketError) =>
-		err.reason._tag === "SocketCloseError"
-			? err.reason.closeReason
-				? `${err.reason.code} ${err.reason.closeReason}`
-				: `${err.reason.code}`
-			: err.message;
+	const closeDetail = (err: Socket.SocketError) => {
+		switch (err.reason._tag) {
+			case "SocketCloseError":
+				return err.reason.closeReason
+					? `${err.reason.code} ${err.reason.closeReason}`
+					: `${err.reason.code}`;
+			case "SocketOpenError":
+				return openFailure(err.reason);
+			default:
+				return err.message;
+		}
+	};
 
 	const connectLoop = Effect.gen(function* () {
 	let reconnectDelay = INITIAL_RECONNECT_DELAY;
+	let failures = 0;
 	while (true) {
 		if (yield* SubscriptionRef.get(paused)) {
 			yield* Effect.log("paused");
@@ -489,6 +540,7 @@ export const makeWorker = Effect.fn("makeWorker")(function* (
 		const err = yield* session(
 			Effect.sync(() => {
 				reconnectDelay = INITIAL_RECONNECT_DELAY;
+				failures = 0;
 			}),
 		).pipe(
 			Effect.match({ onFailure: (e) => e, onSuccess: () => undefined }),
@@ -506,19 +558,35 @@ export const makeWorker = Effect.fn("makeWorker")(function* (
 			});
 		}
 		if (err._tag !== "SocketError") return yield* err;
-		yield* Effect.log(
-			`disconnected (${closeDetail(err)}), reconnecting in ${Duration.format(reconnectDelay)}`,
-		);
-		yield* setConnection({ _tag: "Reconnecting", reason: closeDetail(err) });
-		// Resuming or pausing shouldn't wait out the backoff.
-		yield* Effect.raceFirst(
-			Effect.sleep(reconnectDelay),
-			whenPaused(!(yield* SubscriptionRef.get(paused))),
-		);
-		reconnectDelay = Duration.min(
-			Duration.times(reconnectDelay, 2),
-			MAX_RECONNECT_DELAY,
-		);
+		failures += 1;
+		const reason = closeDetail(err);
+		const retries = yield* SubscriptionRef.get(retryRequests);
+		if (options.reconnectAttempts !== undefined && failures > options.reconnectAttempts) {
+			yield* Effect.log(`disconnected (${reason}), giving up after ${options.reconnectAttempts} retries`);
+			yield* setConnection({ _tag: "Failed", reason });
+			// Pausing from here leaves it paused; resuming then connects afresh.
+			yield* Effect.raceFirst(whenRetriedSince(retries), whenPaused(true));
+		} else {
+			yield* Effect.log(
+				`disconnected (${reason}), reconnecting in ${Duration.format(reconnectDelay)}`,
+			);
+			const retryAt = (yield* Clock.currentTimeMillis) + Duration.toMillis(reconnectDelay);
+			yield* setConnection({ _tag: "Reconnecting", reason, retryAt, attempt: failures });
+			// Resuming, pausing or retrying shouldn't wait out the backoff.
+			yield* Effect.raceAll([
+				Effect.sleep(reconnectDelay),
+				whenPaused(!(yield* SubscriptionRef.get(paused))),
+				whenRetriedSince(retries),
+			]);
+			reconnectDelay = Duration.min(
+				Duration.times(reconnectDelay, 2),
+				MAX_RECONNECT_DELAY,
+			);
+			continue;
+		}
+		reconnectDelay = INITIAL_RECONNECT_DELAY;
+		failures = 0;
+		yield* setConnection({ _tag: "Connecting" });
 	}
 	});
 
@@ -531,6 +599,7 @@ export const makeWorker = Effect.fn("makeWorker")(function* (
 		changes: SubscriptionRef.changes(snapshot),
 		pause: SubscriptionRef.set(paused, true),
 		resume: SubscriptionRef.set(paused, false),
+		retry: SubscriptionRef.update(retryRequests, (n) => n + 1),
 		unload,
 		join: Fiber.join(running),
 	} satisfies Worker;
