@@ -2,6 +2,10 @@
   "name": "@shoal/worker-ui",
   "private": true,
   "type": "module",
+  "scripts": {
+    "build": "vite build --config web/vite.config.ts",
+    "dev": "vite --config web/vite.config.ts"
+  },
   "exports": {
     ".": "./src/index.ts",
     "./format": "./src/format.ts",
@@ -18,7 +22,13 @@
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.1.18",
     "@types/react": "^19.2.0",
-    "@types/react-dom": "^19.2.0"
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^6.0.1",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "tailwindcss": "^4.1.18",
+    "vite": "^8.0.0"
   }
 }

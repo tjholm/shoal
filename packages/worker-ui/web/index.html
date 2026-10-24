@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Shoal</title>
+		<script>
+			// The design system is dark-first; follow the OS before first paint.
+			if (window.matchMedia("(prefers-color-scheme: light)").matches) {
+				document.documentElement.classList.add("light");
+			}
+		</script>
+	</head>
+	<body class="font-sans antialiased">
+		<div id="app"></div>
+		<script type="module" src="./main.tsx"></script>
+	</body>
+</html>

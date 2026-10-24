@@ -1,0 +1,4 @@
+@import 'tailwindcss';
+@import '@shoal/ui/globals.css';
+@import '../src/styles.css';
+@source '.';

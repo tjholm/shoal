@@ -81,6 +81,9 @@ jobs:
             --minify \
             --banner='#!/usr/bin/env node'
           chmod +x dist/npm/shoal.js
+          # `shoal worker start --ui` serves this from beside shoal.js.
+          bun run --filter @shoal/worker-ui build
+          cp -r packages/worker-ui/dist dist/npm/ui
 
       - name: Write publish package.json
         run: |
