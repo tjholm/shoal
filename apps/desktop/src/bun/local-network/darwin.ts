@@ -48,15 +48,28 @@ const localNetworkAddress = async (serverUrl: string): Promise<string | null> =>
 
 /** Longer than a blocked connection takes to fail, which is at once. */
 const PROBE_TIMEOUT_MS = 3_000;
+/**
+ * A blocked connection fails well inside this. A host that's switched off can
+ * fail with EHOSTUNREACH too, but only once address resolution gives up, which
+ * takes seconds.
+ */
+const BLOCKED_WITHIN_MS = 250;
 
 /**
  * Opens a plain TCP connection to the server. macOS fails a blocked app's
  * connection to a local address at once with EHOSTUNREACH, where a server
- * that's down refuses (ECONNREFUSED) or never answers.
+ * that's down refuses (ECONNREFUSED), never answers, or fails slowly.
  */
 const probeLocalNetwork = (address: string, serverUrl: string) =>
 	new Promise<"blocked" | "reachable" | "unreachable">((resolve) => {
+		const started = performance.now();
 		const timer = setTimeout(() => resolve("unreachable"), PROBE_TIMEOUT_MS);
+		const failed = (error: unknown) =>
+			settle(
+				(error as NodeJS.ErrnoException).code === "EHOSTUNREACH" && performance.now() - started < BLOCKED_WITHIN_MS
+					? "blocked"
+					: "unreachable",
+			);
 		const settle = (result: "blocked" | "reachable" | "unreachable") => {
 			clearTimeout(timer);
 			resolve(result);
@@ -70,10 +83,9 @@ const probeLocalNetwork = (address: string, serverUrl: string) =>
 					settle("reachable");
 				},
 				data: () => {},
-				connectError: (_socket, error) =>
-					settle((error as NodeJS.ErrnoException).code === "EHOSTUNREACH" ? "blocked" : "unreachable"),
+				connectError: (_socket, error) => failed(error),
 			},
-		}).catch((error: NodeJS.ErrnoException) => settle(error.code === "EHOSTUNREACH" ? "blocked" : "unreachable"));
+		}).catch(failed);
 	});
 
 const SETTINGS_URL = "x-apple.systempreferences:com.apple.preference.security?Privacy_LocalNetwork";
