@@ -40,7 +40,7 @@ export interface RunningWorker {
 	readonly stop: () => Promise<void>;
 }
 
-/** Failed connections in a row before the worker gives up until the person retries. */
+/** Reconnect attempts after a failed connection before the worker gives up until the person retries. */
 export const RECONNECT_ATTEMPTS = 6;
 
 export const startWorker = (

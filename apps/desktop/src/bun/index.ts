@@ -8,13 +8,15 @@ import {
 	validateSettings,
 } from "@shoal/client-core/settings";
 import { SERVER_REFUSED, SERVER_TIMED_OUT, SERVER_UNREACHABLE, type WorkerSnapshot } from "@shoal/client-core/worker";
-import { ApplicationMenu, BrowserView, BrowserWindow, Tray, Updater, Utils } from "electrobun/main";
+import { BrowserView, BrowserWindow, Updater, Utils } from "electrobun/main";
 import { elapsed, isPaused, rate, statusLabel } from "../shared/format";
 import type { BackendState, ShoalRPC, WorkerState } from "../shared/rpc";
-import { localNetworkAddress, probeLocalNetwork } from "./local-network";
+import { watchLocalNetwork } from "./local-network";
 import { isLaunchAtLogin, setLaunchAtLogin } from "./login";
+import { installAppMenu, setDockIconVisible } from "./shell";
 import { claimSingleInstance } from "./single-instance";
 import { store } from "./store";
+import { createTrayIcon, type TrayLook } from "./tray";
 import { probeBackends, RECONNECT_ATTEMPTS, type RunningWorker, startWorker, toBackendState } from "./worker";
 
 /** Where local model servers usually listen, probed on first run. */
@@ -56,12 +58,6 @@ const windowUrl = await resolveWindowUrl();
 
 let window: { win: BrowserWindow; rpc: ReturnType<typeof createRpc> } | null = null;
 
-// On macOS the app shows in the Dock only while its window is open; otherwise
-// it lives in the menu bar alone.
-const setDockIconVisible = (visible: boolean) => {
-	if (process.platform === "darwin") Utils.setDockIconVisible(visible);
-};
-
 const openWindow = () => {
 	setDockIconVisible(true);
 	if (window) {
@@ -91,44 +87,10 @@ let worker: RunningWorker | null = null;
 let snapshot: WorkerSnapshot | null = null;
 let onlineSince: number | null = null;
 let stoppedReason: string | null = null;
-const LOCAL_NETWORK_SETTINGS = "x-apple.systempreferences:com.apple.preference.security?Privacy_LocalNetwork";
-/** How often to check whether the person has allowed Local Network access yet. */
-const LOCAL_NETWORK_RECHECK_MS = 2_000;
-
-// macOS blocks apps from the local network until the person allows it. Set
-// when the server is on the local network and a probe shows macOS refusing.
-let blockedByMacOS = false;
-let localNetworkWatch: ReturnType<typeof setInterval> | null = null;
-let probing = false;
-
-const stopWatchingLocalNetwork = () => {
-	if (localNetworkWatch !== null) clearInterval(localNetworkWatch);
-	localNetworkWatch = null;
-	blockedByMacOS = false;
-};
-
-/** After an unreachable server: is macOS the cause? If so, reconnect as soon as the person allows access. */
-const checkLocalNetwork = async () => {
-	if (process.platform !== "darwin" || settings === null || probing) return;
-	probing = true;
-	try {
-		const serverUrl = settings.serverUrl;
-		const address = await localNetworkAddress(serverUrl);
-		const result = address === null ? "unreachable" : await probeLocalNetwork(address, serverUrl);
-		if (settings?.serverUrl !== serverUrl) return;
-		if ((result === "blocked") !== blockedByMacOS) console.log(`local network probe of ${address ?? "server"}: ${result}`);
-		if (result === "blocked") {
-			blockedByMacOS = true;
-			localNetworkWatch ??= setInterval(() => void checkLocalNetwork(), LOCAL_NETWORK_RECHECK_MS);
-		} else if (blockedByMacOS) {
-			stopWatchingLocalNetwork();
-			if (result === "reachable") await worker?.retry();
-		}
-		changed();
-	} finally {
-		probing = false;
-	}
-};
+const localNetwork = await watchLocalNetwork({
+	onChange: () => changed(),
+	onAllowed: () => void worker?.retry(),
+});
 
 /** What the person asked for, with a pause that has run out read as on. */
 const availability = (): Availability => {
@@ -184,7 +146,7 @@ const workerState = (): WorkerState => {
 	const reason =
 		disconnected && (connection?._tag === "Reconnecting" || connection?._tag === "Failed") ? connection.reason : null;
 	// Retrying on a timer can't help; access is up to the person.
-	const blocked = disconnected && blockedByMacOS;
+	const blocked = disconnected && localNetwork.blocked;
 	return {
 		status: blocked ? "blocked" : status,
 		detail: status === "stopped" ? stoppedReason : blocked ? "Needs Local Network access" : reason === null ? null : describeProblem(reason),
@@ -205,56 +167,10 @@ const workerState = (): WorkerState => {
 	};
 };
 
-// A template image lets macOS tint the icon to suit the menu bar.
-const MAC_TEMPLATE_ICON = process.platform === "darwin";
-// The Windows tray loads only .ico files.
-const TRAY_EXTENSION = process.platform === "win32" ? "ico" : "svg";
-const trayImage = (accepting: boolean) => {
-	const state = accepting ? "sharing" : "paused";
-	return MAC_TEMPLATE_ICON
-		? `views://assets/tray-template-${state}.svg`
-		: `views://assets/tray-${state}.${TRAY_EXTENSION}`;
-};
-const tray = MAC_TEMPLATE_ICON
-	? new Tray({ image: trayImage(false), template: true, width: 18, height: 18 })
-	: process.platform === "win32"
-		? // The 32px image, which Windows scales down to fit the tray at any display scaling.
-			new Tray({ image: trayImage(false), template: false, width: 32, height: 32 })
-		: new Tray({ image: trayImage(false), template: false });
-// Tray swallows native failures and leaves id at 0; without a tray there is
-// no way to control or quit the app.
-if (tray.id === 0) {
-	throw new Error(
-		"Could not create a system tray icon. Your desktop needs a StatusNotifierItem host (on GNOME, the AppIndicator extension).",
-	);
-}
+const trayIcon = await createTrayIcon();
+const { tray } = trayIcon;
 
-// macOS routes Cmd+C/V/X/A/Z through the main menu; without an Edit menu the
-// window's text fields can't copy or paste.
-if (process.platform === "darwin") {
-	ApplicationMenu.setApplicationMenu([
-		{
-			label: "Shoal",
-			submenu: [{ role: "hide" }, { role: "hideOthers" }, { role: "showAll" }],
-		},
-		{
-			label: "Edit",
-			submenu: [
-				{ role: "undo" },
-				{ role: "redo" },
-				{ type: "separator" },
-				{ role: "cut" },
-				{ role: "copy" },
-				{ role: "paste" },
-				{ role: "selectAll" },
-			],
-		},
-		{
-			label: "Window",
-			submenu: [{ role: "minimize" }, { role: "close" }],
-		},
-	]);
-}
+installAppMenu();
 
 /** The menu's second line: what's running, or how long a pause has left. */
 const trayDetail = (state: WorkerState) => {
@@ -327,26 +243,22 @@ let trayShownAt = 0;
 /** At most once a second while only the detail line (job rates, time left) changes. */
 const renderTray = (state: WorkerState) => {
 	const accepting = state.availability === "on" && state.status !== "not-configured";
+	// Wants to take work but can't reach the server, so the menu bar should draw the eye.
+	const look: TrayLook =
+		state.status === "reconnecting" || state.status === "failed" || state.status === "stopped" || state.status === "blocked"
+			? "warning"
+			: accepting
+				? "sharing"
+				: "paused";
 	const detail = trayDetail(state);
-	const shown = JSON.stringify([accepting, trayMenu(state, detail)]);
-	const shape = JSON.stringify([accepting, trayMenu(state, null)]);
+	const shown = JSON.stringify([look, trayMenu(state, detail)]);
+	const shape = JSON.stringify([look, trayMenu(state, null)]);
 	if (shown === shownMenu) return;
 	if (shape === shownShape && Date.now() - trayShownAt < 1000) return;
 	shownMenu = shown;
 	shownShape = shape;
 	trayShownAt = Date.now();
-	const image = trayImage(accepting);
-	if (image !== tray.image) {
-		if (MAC_TEMPLATE_ICON) {
-			// On macOS setImage drops the template flag and size, but re-showing a
-			// hidden tray rebuilds it from the stored image, flag and size.
-			tray.setVisible(false);
-			tray.setImage(image);
-			tray.setVisible(true);
-		} else {
-			tray.setImage(image);
-		}
-	}
+	trayIcon.show(look);
 	tray.setMenu(trayMenu(state, detail));
 };
 
@@ -372,18 +284,14 @@ const restartWorker = async () => {
 	snapshot = null;
 	onlineSince = null;
 	stoppedReason = null;
-	stopWatchingLocalNetwork();
+	localNetwork.reset();
 	if (settings !== null && token !== null) {
 		worker = await startWorker({ ...settings, availability: availability() }, token, {
 			onSnapshot: (next) => {
 				const online = next.connection._tag === "Connected";
 				onlineSince = online ? (onlineSince ?? Date.now()) : null;
 				snapshot = next;
-				const { connection } = next;
-				if (connection._tag === "Connected") stopWatchingLocalNetwork();
-				else if ((connection._tag === "Reconnecting" || connection._tag === "Failed") && connection.reason === SERVER_UNREACHABLE) {
-					void checkLocalNetwork();
-				}
+				if (settings !== null) localNetwork.observe(next.connection, settings.serverUrl);
 				changed();
 			},
 			onStopped: (reason) => {
@@ -435,8 +343,7 @@ tray.on("tray-clicked", (event) => {
 		case "retry":
 			return worker?.retry();
 		case "local-network":
-			Utils.openExternal(LOCAL_NETWORK_SETTINGS);
-			return;
+			return localNetwork.openSettings();
 		case "open":
 			return openWindow();
 		case "dashboard":
@@ -482,9 +389,7 @@ function createRpc() {
 				},
 				setAvailability: (next) => setAvailability(next),
 				retryConnection: () => worker?.retry(),
-				openLocalNetworkSettings: () => {
-					Utils.openExternal(LOCAL_NETWORK_SETTINGS);
-				},
+				openLocalNetworkSettings: () => localNetwork.openSettings(),
 				detectBackends: () => probeBackends(LOCAL_BACKENDS),
 				unloadModel: async (model) =>
 					(await worker?.unload(model.backend, model.id)) ?? "Shoal isn't running.",

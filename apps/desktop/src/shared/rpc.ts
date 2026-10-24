@@ -38,9 +38,9 @@ export interface WorkerState {
 	readonly detail: string | null;
 	/** When a reconnecting worker tries next, epoch ms. */
 	readonly retryAt: number | null;
-	/** Which reconnect attempt failed last, from 1, while reconnecting. */
+	/** Which reconnect attempt starts at `retryAt`, from 1, while reconnecting. */
 	readonly attempt: number | null;
-	/** Attempts before the worker gives up and waits for "Try again". */
+	/** Reconnect attempts before the worker gives up and waits for "Try again". */
 	readonly maxAttempts: number;
 	readonly availability: Availability;
 	readonly serverUrl: string | null;

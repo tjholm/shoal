@@ -16,7 +16,7 @@ export default {
 		exitOnLastWindowClosed: false,
 	},
 	scripts: {
-		postWrap: "scripts/mac-identity.ts",
+		postWrap: "scripts/mac/identity.ts",
 	},
 	build: {
 		// The worker is Effect on Bun; Cottontail's API coverage is undocumented.
@@ -32,9 +32,12 @@ export default {
 			"assets/tray-paused.svg": "views/assets/tray-paused.svg",
 			"assets/tray-template-sharing.svg": "views/assets/tray-template-sharing.svg",
 			"assets/tray-template-paused.svg": "views/assets/tray-template-paused.svg",
+			"assets/tray-warning.svg": "views/assets/tray-warning.svg",
+			"assets/tray-template-warning.svg": "views/assets/tray-template-warning.svg",
 			// The Windows tray loads only .ico files; scripts/icon.ts renders them.
 			"assets/tray-sharing.ico": "views/assets/tray-sharing.ico",
 			"assets/tray-paused.ico": "views/assets/tray-paused.ico",
+			"assets/tray-warning.ico": "views/assets/tray-warning.ico",
 		},
 		// `dev` rebuilds dist/ with `vite build --watch`, and the app rebuilds to pick it up.
 		mac: {

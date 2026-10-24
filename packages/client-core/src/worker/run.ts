@@ -55,7 +55,7 @@ export interface WorkerOptions {
 	readonly name: Option.Option<string>;
 	/** Start without connecting, as if `pause` had been called. */
 	readonly paused?: boolean;
-	/** Failed connections in a row before giving up until `retry`; unlimited when absent. */
+	/** Reconnect attempts after a failed connection before giving up until `retry`; unlimited when absent. */
 	readonly reconnectAttempts?: number;
 }
 
@@ -64,14 +64,14 @@ export interface WorkerOptions {
 export type WorkerConnection =
 	| { readonly _tag: "Connecting" }
 	| { readonly _tag: "Connected"; readonly workerId: string }
-	/** `retryAt` is when the next attempt starts, epoch ms; `attempt` counts from 1 since the last connection. */
+	/** `retryAt` is when reconnect attempt number `attempt` starts, epoch ms; attempts count from 1 since the last connection. */
 	| {
 			readonly _tag: "Reconnecting";
 			readonly reason: string;
 			readonly retryAt: number;
 			readonly attempt: number;
 		}
-	/** Gave up after `reconnectAttempts` failures; waits for `retry`. */
+	/** Gave up after `reconnectAttempts` reconnect attempts failed too; waits for `retry`. */
 	| { readonly _tag: "Failed"; readonly reason: string }
 	| { readonly _tag: "Paused" };
 
@@ -144,8 +144,6 @@ type InferMessage = Extract<ServerMessage, { type: "infer" }>;
 const encodeWorkerMessage = Schema.encodeSync(WorkerMessageJson);
 const decodeServerMessage = Schema.decodeUnknownEffect(ServerMessageJson);
 
-/** Connect to the Shoal server and serve inference jobs until the server
- *  rejects our credentials. */
 /** Bun's WebSocket error events read "WebSocket connection to '<url>' failed: <reason>". */
 const BUN_OPEN_FAILURE = /failed: (.+)$/;
 /** The reconnect reason when the server's address didn't answer at all. */
@@ -168,6 +166,8 @@ const openFailure = (reason: Socket.SocketOpenError) => {
 	return OPEN_FAILURES[detail] ?? `Couldn't connect to the server: ${detail}`;
 };
 
+/** Connect to the Shoal server and serve inference jobs until the server
+ *  rejects our credentials. */
 export const runWorker = (options: WorkerOptions) =>
 	makeWorker(options).pipe(
 		Effect.flatMap((worker) => worker.join),
@@ -522,7 +522,8 @@ export const makeWorker = Effect.fn("makeWorker")(function* (
 			case "SocketOpenError":
 				return openFailure(err.reason);
 			default:
-				return err.message;
+				// The socket URL carries the API key.
+				return err.message.replaceAll(wsUrl, options.serverUrl);
 		}
 	};
 
