@@ -522,7 +522,8 @@ export const makeWorker = Effect.fn("makeWorker")(function* (
 			case "SocketOpenError":
 				return openFailure(err.reason);
 			default:
-				return err.message;
+				// The socket URL carries the API key.
+				return err.message.replaceAll(wsUrl, options.serverUrl);
 		}
 	};
 
