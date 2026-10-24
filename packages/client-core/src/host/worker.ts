@@ -1,14 +1,12 @@
-import { BunServices } from "@effect/platform-bun";
-import { IdentityStore } from "@shoal/client-core/identity";
-import { type BackendSnapshot, InferenceClient } from "@shoal/client-core/inference";
-import { canUnload } from "@shoal/client-core/inference/models";
-import { type Settings, workerSocketUrl } from "@shoal/client-core/settings";
-import { makeWorker, type WorkerSnapshot } from "@shoal/client-core/worker";
-import { Array as Arr, Cause, Effect, Exit, Fiber, Layer, Option, Stream } from "effect";
+import { Array as Arr, Cause, type Crypto, Effect, Exit, Fiber, type FileSystem, Layer, Option, type Path, Stream } from "effect";
 import { FetchHttpClient } from "effect/http";
 import { Socket } from "effect/socket";
-import type { BackendState } from "../shared/rpc";
-import { store } from "./store";
+import { IdentityStore } from "../identity";
+import { type BackendSnapshot, InferenceClient } from "../inference";
+import { canUnload } from "../inference/models";
+import { type Settings, workerSocketUrl } from "../settings";
+import { makeWorker, type WorkerSnapshot } from "../worker/run";
+import type { BackendState } from "./api";
 
 export const toBackendState = (b: BackendSnapshot): BackendState => ({
 	url: b.url,
@@ -40,12 +38,21 @@ export interface RunningWorker {
 	readonly stop: () => Promise<void>;
 }
 
-/** Reconnect attempts after a failed connection before the worker gives up until the person retries. */
-export const RECONNECT_ATTEMPTS = 6;
+/** The file system, path and crypto services the worker's identity store needs, from the client's runtime. */
+export type PlatformLayer = Layer.Layer<FileSystem.FileSystem | Path.Path | Crypto.Crypto>;
+
+export interface WorkerOptions {
+	/** Where the worker keeps its identity for each server. */
+	readonly identityDir: string;
+	readonly platform: PlatformLayer;
+	/** Reconnect attempts after a failed connection before the worker gives up until the person retries; unlimited when absent. */
+	readonly reconnectAttempts?: number;
+}
 
 export const startWorker = (
 	settings: Settings,
 	token: string,
+	options: WorkerOptions,
 	handlers: {
 		readonly onSnapshot: (snapshot: WorkerSnapshot) => void;
 		/** The worker stopped for good, e.g. the server rejected the token. */
@@ -66,9 +73,9 @@ export const startWorker = (
 
 		const layer = Layer.mergeAll(
 			InferenceClient.layer(settings.backends),
-			IdentityStore.layer(store.dir, serverUrl),
+			IdentityStore.layer(options.identityDir, serverUrl),
 			Socket.layerWebSocketConstructorGlobal,
-		).pipe(Layer.provide(FetchHttpClient.layer), Layer.provideMerge(BunServices.layer));
+		).pipe(Layer.provide(FetchHttpClient.layer), Layer.provideMerge(options.platform));
 
 		const program = Effect.gen(function* () {
 			const worker = yield* makeWorker({
@@ -77,8 +84,7 @@ export const startWorker = (
 				maxConcurrent: settings.concurrency,
 				name: settings.name === "" ? Option.none() : Option.some(settings.name),
 				paused: settings.availability !== "on",
-				// With 1s doubling backoff, gives up about a minute after the first failure.
-				reconnectAttempts: RECONNECT_ATTEMPTS,
+				reconnectAttempts: options.reconnectAttempts,
 			});
 			yield* worker.changes.pipe(
 				Stream.runForEach((snapshot) => Effect.sync(() => handlers.onSnapshot(snapshot))),

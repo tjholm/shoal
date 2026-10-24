@@ -93,7 +93,7 @@ function Banner({
 		: state.status === "blocked"
 			? "Waiting for Local Network access"
 			: state.retryAt !== null
-				? `Reconnecting in ${elapsed(Math.max(0, state.retryAt - now))} · attempt ${state.attempt} of ${state.maxAttempts}`
+				? `Reconnecting in ${elapsed(Math.max(0, state.retryAt - now))} · attempt ${state.attempt}${state.maxAttempts === null ? "" : ` of ${state.maxAttempts}`}`
 				: state.status === "failed"
 					? `Stopped trying after ${state.maxAttempts} attempts`
 					: state.detail;

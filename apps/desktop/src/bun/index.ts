@@ -1,31 +1,15 @@
-import {
-	type Availability,
-	loadSettings,
-	loadToken,
-	type Settings,
-	saveSettings,
-	saveToken,
-	validateSettings,
-} from "@shoal/client-core/settings";
-import { SERVER_REFUSED, SERVER_TIMED_OUT, SERVER_UNREACHABLE, type WorkerSnapshot } from "@shoal/client-core/worker";
+import { BunServices } from "@effect/platform-bun";
+import { createHost } from "@shoal/client-core/host";
 import { BrowserView, BrowserWindow, Updater, Utils } from "electrobun/main";
 import { elapsed, isPaused, rate, statusLabel } from "../shared/format";
-import type { BackendState, ShoalRPC, WorkerState } from "../shared/rpc";
+import type { ShoalRPC, WorkerState } from "../shared/rpc";
 import { watchLocalNetwork } from "./local-network";
 import { isLaunchAtLogin, setLaunchAtLogin } from "./login";
 import { installAppMenu, setDockIconVisible } from "./shell";
 import { claimSingleInstance } from "./single-instance";
-import { store } from "./store";
+import { dir, tokens } from "./store";
 import { createTrayIcon, type TrayLook } from "./tray";
-import { probeBackends, RECONNECT_ATTEMPTS, type RunningWorker, startWorker, toBackendState } from "./worker";
 
-/** Where local model servers usually listen, probed on first run. */
-const LOCAL_BACKENDS = [
-	"http://localhost:11434",
-	"http://localhost:1234",
-	"http://localhost:8080",
-	"http://localhost:8000",
-] as const;
 const PAUSES = [
 	[10, "10 minutes"],
 	[30, "30 minutes"],
@@ -79,93 +63,19 @@ const openWindow = () => {
 	window = { win, rpc };
 };
 
-if (!(await claimSingleInstance(openWindow))) process.exit(0);
+// Another copy can ask for the window before the host below exists.
+const started = Promise.withResolvers<void>();
+if (!(await claimSingleInstance(() => void started.promise.then(openWindow)))) process.exit(0);
 
-let settings: Settings | null = await loadSettings(store);
-let token: string | null = settings && (await loadToken(store, settings.serverUrl));
-let worker: RunningWorker | null = null;
-let snapshot: WorkerSnapshot | null = null;
-let onlineSince: number | null = null;
-let stoppedReason: string | null = null;
-const localNetwork = await watchLocalNetwork({
-	onChange: () => changed(),
-	onAllowed: () => void worker?.retry(),
+const host = await createHost({
+	dir,
+	tokens,
+	platform: BunServices.layer,
+	// With 1s doubling backoff, gives up about a minute after the first failure.
+	reconnectAttempts: 6,
+	launchAtLogin: { get: isLaunchAtLogin, set: setLaunchAtLogin },
+	watchLocalNetwork,
 });
-
-/** What the person asked for, with a pause that has run out read as on. */
-const availability = (): Availability => {
-	const saved = settings?.availability ?? "on";
-	return isPaused(saved) && saved.pausedUntil <= Date.now() ? "on" : saved;
-};
-
-const notProbed = (url: string): BackendState => ({
-	url,
-	dialect: null,
-	canUnload: false,
-	models: [],
-	loaded: [],
-	error: null,
-});
-
-/** The worker's reason for a failed connection, as a sentence naming the server. */
-const describeProblem = (reason: string) => {
-	const server = settings ? new URL(settings.serverUrl).host : "The server";
-	switch (reason) {
-		case SERVER_UNREACHABLE:
-			return `${server} didn't answer.`;
-		case SERVER_REFUSED:
-			return `${server} refused the connection.`;
-		case SERVER_TIMED_OUT:
-			return `${server} took too long to answer.`;
-		default:
-			// Close codes such as 1006 when an open connection drops.
-			return /^\d{4}\b/.test(reason) ? `The connection to ${server} dropped (${reason}).` : `${reason}.`;
-	}
-};
-
-const workerState = (): WorkerState => {
-	const wanted = availability();
-	const connection = snapshot?.connection;
-	const status: WorkerState["status"] =
-		settings === null || token === null
-			? "not-configured"
-			: wanted === "off"
-				? "off"
-				: isPaused(wanted)
-					? "paused"
-					: stoppedReason !== null
-						? "stopped"
-						: connection?._tag === "Connected"
-							? "online"
-							: connection?._tag === "Reconnecting"
-								? "reconnecting"
-								: connection?._tag === "Failed"
-									? "failed"
-									: "connecting";
-	const disconnected = (status === "reconnecting" || status === "failed") && connection?._tag !== "Connected";
-	const reason =
-		disconnected && (connection?._tag === "Reconnecting" || connection?._tag === "Failed") ? connection.reason : null;
-	// Retrying on a timer can't help; access is up to the person.
-	const blocked = disconnected && localNetwork.blocked;
-	return {
-		status: blocked ? "blocked" : status,
-		detail: status === "stopped" ? stoppedReason : blocked ? "Needs Local Network access" : reason === null ? null : describeProblem(reason),
-		retryAt: !blocked && status === "reconnecting" && connection?._tag === "Reconnecting" ? connection.retryAt : null,
-		attempt: !blocked && status === "reconnecting" && connection?._tag === "Reconnecting" ? connection.attempt : null,
-		maxAttempts: RECONNECT_ATTEMPTS,
-		availability: wanted,
-		serverUrl: settings?.serverUrl ?? null,
-		name: settings?.name ?? "",
-		workerId: connection?._tag === "Connected" ? connection.workerId : null,
-		onlineSince,
-		concurrency: settings?.concurrency ?? 1,
-		jobs: snapshot?.jobs ?? [],
-		recent: snapshot?.recent ?? [],
-		jobsCompleted: snapshot?.jobsCompleted ?? 0,
-		tokensOut: snapshot?.tokensOut ?? 0,
-		backends: snapshot?.backends.map(toBackendState) ?? settings?.backends.map(notProbed) ?? [],
-	};
-};
 
 const trayIcon = await createTrayIcon();
 const { tray } = trayIcon;
@@ -204,7 +114,7 @@ const durations = (prefix: string, choices: ReadonlyArray<readonly [number, stri
 ];
 
 const trayMenu = (state: WorkerState, detail: string | null): Array<MenuItem> => {
-	const controls = settings !== null;
+	const controls = host.settings() !== null;
 	const availabilityItems = isPaused(state.availability)
 		? [
 				item("Resume now", "resume"),
@@ -230,7 +140,7 @@ const trayMenu = (state: WorkerState, detail: string | null): Array<MenuItem> =>
 		...availabilityItems,
 		separator,
 		item("Open Shoal…", "open"),
-		...(settings ? [item("Open dashboard", "dashboard")] : []),
+		...(controls ? [item("Open dashboard", "dashboard")] : []),
 		separator,
 		item("Quit Shoal", "quit"),
 	];
@@ -262,66 +172,15 @@ const renderTray = (state: WorkerState) => {
 	tray.setMenu(trayMenu(state, detail));
 };
 
-let pushTimer: ReturnType<typeof setTimeout> | null = null;
+host.subscribe((state) => {
+	window?.rpc.send.stateChanged(state);
+	renderTray(state);
+});
 
-/** Streaming jobs change the state per token; the window follows at most every 100ms. */
-const changed = () => {
-	if (pushTimer !== null) return;
-	pushTimer = setTimeout(() => {
-		pushTimer = null;
-		const state = workerState();
-		window?.rpc.send.stateChanged(state);
-		renderTray(state);
-	}, 100);
-};
-// Keeps the tray's "time left" and job rates current when nothing else changes.
-setInterval(changed, 1_000);
-
-/** (Re)start the worker from the saved settings and token. */
-const restartWorker = async () => {
-	await worker?.stop();
-	worker = null;
-	snapshot = null;
-	onlineSince = null;
-	stoppedReason = null;
-	localNetwork.reset();
-	if (settings !== null && token !== null) {
-		worker = await startWorker({ ...settings, availability: availability() }, token, {
-			onSnapshot: (next) => {
-				const online = next.connection._tag === "Connected";
-				onlineSince = online ? (onlineSince ?? Date.now()) : null;
-				snapshot = next;
-				if (settings !== null) localNetwork.observe(next.connection, settings.serverUrl);
-				changed();
-			},
-			onStopped: (reason) => {
-				stoppedReason = reason;
-				changed();
-			},
-		});
-	}
-	changed();
-};
-
-let pauseEnd: ReturnType<typeof setTimeout> | undefined;
-
-/** Switching off or pausing disconnects at once, abandoning running jobs. */
-const setAvailability = async (next: Availability) => {
-	if (settings === null) return;
-	settings = { ...settings, availability: next };
-	await saveSettings(store, settings);
-	clearTimeout(pauseEnd);
-	if (isPaused(next)) {
-		pauseEnd = setTimeout(() => void setAvailability("on"), Math.max(0, next.pausedUntil - Date.now()));
-	}
-	// A worker stopped by the server gets another try when work is switched back on.
-	if (stoppedReason !== null && next === "on") return restartWorker();
-	await worker?.setPaused(availability() !== "on");
-	changed();
-};
+const { setAvailability } = host.handlers;
 
 const extendPause = (minutes: number) => {
-	const current = availability();
+	const current = host.state().availability;
 	const from = isPaused(current) ? current.pausedUntil : Date.now();
 	return setAvailability({ pausedUntil: from + minutes * MINUTE });
 };
@@ -331,7 +190,7 @@ tray.on("tray-clicked", (event) => {
 	const [command, minutes] = action.split(":");
 	switch (command) {
 		case "accept":
-			return setAvailability(availability() === "on" ? "off" : "on");
+			return setAvailability(host.state().availability === "on" ? "off" : "on");
 		case "pause":
 			return setAvailability({ pausedUntil: Date.now() + Number(minutes) * MINUTE });
 		case "extend":
@@ -341,65 +200,26 @@ tray.on("tray-clicked", (event) => {
 		case "stay-off":
 			return setAvailability("off");
 		case "retry":
-			return worker?.retry();
+			return host.handlers.retryConnection();
 		case "local-network":
-			return localNetwork.openSettings();
+			return host.handlers.openLocalNetworkSettings();
 		case "open":
 			return openWindow();
-		case "dashboard":
-			if (settings) Utils.openExternal(settings.serverUrl);
+		case "dashboard": {
+			const saved = host.settings();
+			if (saved) Utils.openExternal(saved.serverUrl);
 			return;
+		}
 		case "quit":
 			return Utils.quit();
 	}
 });
 
 function createRpc() {
-	return BrowserView.defineRPC<ShoalRPC>({
-		handlers: {
-			requests: {
-				getState: () => workerState(),
-				getSettings: () =>
-					settings && {
-						serverUrl: settings.serverUrl,
-						hasToken: token !== null,
-						backends: settings.backends,
-						name: settings.name,
-						concurrency: settings.concurrency,
-						launchAtLogin: isLaunchAtLogin(),
-					},
-				saveSettings: async (form) => {
-					const result = validateSettings(form, settings);
-					if ("errors" in result) return { ok: false, errors: result.errors };
-					try {
-						const nextToken = result.token ?? (await loadToken(store, result.settings.serverUrl));
-						if (nextToken === null) {
-							return { ok: false, errors: ["Enter the API key from your shoal dashboard."] };
-						}
-						if (result.token !== null) await saveToken(store, result.settings.serverUrl, result.token);
-						await saveSettings(store, result.settings);
-						if (form.launchAtLogin !== isLaunchAtLogin()) await setLaunchAtLogin(form.launchAtLogin);
-						settings = result.settings;
-						token = nextToken;
-					} catch (error) {
-						return { ok: false, errors: [error instanceof Error ? error.message : String(error)] };
-					}
-					await restartWorker();
-					return { ok: true };
-				},
-				setAvailability: (next) => setAvailability(next),
-				retryConnection: () => worker?.retry(),
-				openLocalNetworkSettings: () => localNetwork.openSettings(),
-				detectBackends: () => probeBackends(LOCAL_BACKENDS),
-				unloadModel: async (model) =>
-					(await worker?.unload(model.backend, model.id)) ?? "Shoal isn't running.",
-			},
-		},
-	});
+	return BrowserView.defineRPC<ShoalRPC>({ handlers: { requests: host.handlers } });
 }
 
-const saved = settings?.availability;
-if (saved !== undefined && isPaused(saved)) await setAvailability(availability());
-await restartWorker();
-if (settings === null || token === null) openWindow();
+started.resolve();
+renderTray(host.state());
+if (host.state().status === "not-configured") openWindow();
 else setDockIconVisible(false);

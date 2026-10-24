@@ -40,17 +40,11 @@ export interface Settings {
 	readonly availability: Availability;
 }
 
-/** Where a client keeps its settings file, and the credential store service its API keys go under. */
-export interface SettingsStore {
-	readonly dir: string;
-	readonly credentialService: string;
-}
+const settingsPath = (dir: string) => path.join(dir, "worker.json");
 
-const settingsPath = (store: SettingsStore) => path.join(store.dir, "worker.json");
-
-/** The saved settings, or null before first-run setup. Throws if the file is unreadable. */
-export const loadSettings = async (store: SettingsStore): Promise<Settings | null> => {
-	const file = settingsPath(store);
+/** The settings saved in `dir`, or null before first-run setup. Throws if the file is unreadable. */
+export const loadSettings = async (dir: string): Promise<Settings | null> => {
+	const file = settingsPath(dir);
 	let raw: string;
 	try {
 		raw = await readFile(file, "utf8");
@@ -76,22 +70,25 @@ export const loadSettings = async (store: SettingsStore): Promise<Settings | nul
 	};
 };
 
-export const saveSettings = async (store: SettingsStore, settings: Settings) => {
-	const file = settingsPath(store);
-	await mkdir(store.dir, { recursive: true, mode: 0o700 });
+export const saveSettings = async (dir: string, settings: Settings) => {
+	const file = settingsPath(dir);
+	await mkdir(dir, { recursive: true, mode: 0o700 });
 	await writeFile(file, Schema.encodeSync(SettingsJson)(settings), { mode: 0o600 });
 	// writeFile's mode only applies when it creates the file.
 	await chmod(file, 0o600);
 };
 
-/** One API key per server, in the Keychain, libsecret or Windows Credential Manager. */
-const tokenEntry = (store: SettingsStore, serverUrl: string) => ({ service: store.credentialService, name: serverUrl });
+/** Where a client keeps its API key for each server. */
+export interface TokenStore {
+	readonly load: (serverUrl: string) => Promise<string | null>;
+	readonly save: (serverUrl: string, token: string) => Promise<void>;
+}
 
-export const loadToken = (store: SettingsStore, serverUrl: string): Promise<string | null> =>
-	Bun.secrets.get(tokenEntry(store, serverUrl));
-
-export const saveToken = (store: SettingsStore, serverUrl: string, token: string): Promise<void> =>
-	Bun.secrets.set({ ...tokenEntry(store, serverUrl), value: token });
+/** One API key per server under `service`, in the Keychain, libsecret or Windows Credential Manager. Needs Bun. */
+export const credentialStoreTokens = (service: string): TokenStore => ({
+	load: (serverUrl) => Bun.secrets.get({ service, name: serverUrl }),
+	save: (serverUrl, token) => Bun.secrets.set({ service, name: serverUrl, value: token }),
+});
 
 /** Bare hosts are allowed so people can paste "shoal.example.com". */
 const parseHttpUrl = (input: string) => {

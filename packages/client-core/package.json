@@ -3,6 +3,8 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./host": "./src/host/index.ts",
+    "./host/api": "./src/host/api.ts",
     "./identity": "./src/identity.ts",
     "./inference": "./src/inference/index.ts",
     "./inference/models": "./src/inference/models/index.ts",

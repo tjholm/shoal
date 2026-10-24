@@ -1,4 +1,7 @@
-import type { Availability, WorkerState } from "./rpc";
+import { isPaused } from "@shoal/client-core/host/api";
+import type { WorkerState } from "./rpc";
+
+export { isPaused };
 
 /** "31s", "4m 12s", "2h 14m". */
 export const elapsed = (ms: number) => {
@@ -16,9 +19,6 @@ export const clock = (epochMs: number) =>
 /** "41.2 tok/s", or null before a second has passed. */
 export const rate = (tokens: number, ms: number) =>
 	ms < 1000 ? null : `${(tokens / (ms / 1000)).toFixed(1)} tok/s`;
-
-export const isPaused = (a: Availability): a is { readonly pausedUntil: number } =>
-	typeof a === "object";
 
 /** The one-line status the tray and window lead with. */
 export const statusLabel = (state: WorkerState) => {
