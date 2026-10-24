@@ -2,7 +2,7 @@ import { Button } from "@shoal/ui/components/button";
 import { FitNumber } from "@shoal/ui/components/FitNumber";
 import { Sparkline } from "@shoal/ui/components/Sparkline";
 import { TextMorph } from "@shoal/ui/components/TextMorph";
-import { CircleAlert, type LucideIcon, RefreshCw } from "lucide-react";
+import { CircleAlert, type LucideIcon, RefreshCw, ShieldAlert } from "lucide-react";
 import { type ReactNode, useRef, useState } from "react";
 import { elapsed, isPaused, statusLabel } from "../shared/format";
 import type { Availability, RunningJob, WorkerState } from "../shared/rpc";
@@ -86,15 +86,17 @@ function Banner({
 }) {
 	const online = state.status === "online";
 	const tone = statusTone(state.status);
-	const disconnected = state.status === "reconnecting" || state.status === "failed";
+	const disconnected = state.status === "reconnecting" || state.status === "failed" || state.status === "blocked";
 	const title = online ? "Accepting work" : disconnected ? "Not connected" : statusLabel(state);
 	const subtitle = online
 		? `Connected for ${elapsed(now - (state.onlineSince ?? now))} · ${state.jobs.length} of ${state.concurrency} slots busy`
-		: state.retryAt !== null
-			? `Reconnecting in ${elapsed(Math.max(0, state.retryAt - now))} · attempt ${state.attempt} of ${state.maxAttempts}`
-			: state.status === "failed"
-				? `Stopped trying after ${state.maxAttempts} attempts`
-				: state.detail;
+		: state.status === "blocked"
+			? "Waiting for Local Network access"
+			: state.retryAt !== null
+				? `Reconnecting in ${elapsed(Math.max(0, state.retryAt - now))} · attempt ${state.attempt} of ${state.maxAttempts}`
+				: state.status === "failed"
+					? `Stopped trying after ${state.maxAttempts} attempts`
+					: state.detail;
 	const segment = (label: string, active: boolean, onClick: () => void) => (
 		<button
 			type="button"
@@ -141,6 +143,17 @@ function Banner({
 				<Problem tone="coral" icon={CircleAlert} message={`${state.detail ?? ""} Check the server is running.`}>
 					<Button type="button" size="sm" onClick={() => void rpc.request.retryConnection()}>
 						Try again
+					</Button>
+				</Problem>
+			)}
+			{state.status === "blocked" && (
+				<Problem
+					tone="coral"
+					icon={ShieldAlert}
+					message="macOS is blocking Shoal from your network. Turn Shoal on under Local Network; it connects as soon as you do."
+				>
+					<Button type="button" size="sm" onClick={() => void rpc.request.openLocalNetworkSettings()}>
+						Open System Settings
 					</Button>
 				</Problem>
 			)}
