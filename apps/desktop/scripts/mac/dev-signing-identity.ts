@@ -1,6 +1,6 @@
 /**
  * Creates the self-signed "Shoal Dev" code signing identity in the login
- * keychain, for scripts/mac-identity.ts. Run once per Mac: `bun scripts/dev-signing-identity.ts`.
+ * keychain, for scripts/mac/identity.ts. Run once per Mac: `bun scripts/mac/dev-signing-identity.ts`.
  *
  * Ad hoc signatures change on every rebuild, and macOS forgets the app's
  * Local Network access each time. A certificate signature stays the same.
@@ -10,7 +10,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { $ } from "bun";
-import { DEV_SIGNING_IDENTITY, hasDevSigningIdentity } from "./mac-identity";
+import { DEV_SIGNING_IDENTITY, hasDevSigningIdentity } from "./identity";
 
 if (process.platform !== "darwin") throw new Error("Only macOS builds are signed this way.");
 if (hasDevSigningIdentity()) {

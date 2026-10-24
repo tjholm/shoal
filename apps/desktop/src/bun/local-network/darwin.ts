@@ -1,6 +1,9 @@
+import { SERVER_UNREACHABLE } from "@shoal/client-core/worker";
+import { Utils } from "electrobun/main";
 import { lookup } from "node:dns/promises";
 import { BlockList, isIP } from "node:net";
 import { networkInterfaces } from "node:os";
+import type { LocalNetworkHandlers, LocalNetworkWatch } from "./types";
 
 /**
  * macOS's Local Network privacy covers addresses on the Mac's Wi-Fi and
@@ -31,7 +34,7 @@ const portOf = (serverUrl: string) => {
 };
 
 /** The server's address when it's on one of this Mac's local networks; null otherwise, or when its name doesn't resolve. */
-export const localNetworkAddress = async (serverUrl: string): Promise<string | null> => {
+const localNetworkAddress = async (serverUrl: string): Promise<string | null> => {
 	const host = hostOf(serverUrl);
 	try {
 		const addresses = isIP(host) ? [{ address: host, family: isIP(host) }] : await lookup(host, { all: true });
@@ -51,7 +54,7 @@ const PROBE_TIMEOUT_MS = 3_000;
  * connection to a local address at once with EHOSTUNREACH, where a server
  * that's down refuses (ECONNREFUSED) or never answers.
  */
-export const probeLocalNetwork = (address: string, serverUrl: string) =>
+const probeLocalNetwork = (address: string, serverUrl: string) =>
 	new Promise<"blocked" | "reachable" | "unreachable">((resolve) => {
 		const timer = setTimeout(() => resolve("unreachable"), PROBE_TIMEOUT_MS);
 		const settle = (result: "blocked" | "reachable" | "unreachable") => {
@@ -72,3 +75,61 @@ export const probeLocalNetwork = (address: string, serverUrl: string) =>
 			},
 		}).catch((error: NodeJS.ErrnoException) => settle(error.code === "EHOSTUNREACH" ? "blocked" : "unreachable"));
 	});
+
+const SETTINGS_URL = "x-apple.systempreferences:com.apple.preference.security?Privacy_LocalNetwork";
+/** How often to check whether the person has allowed Local Network access yet. */
+const RECHECK_MS = 2_000;
+
+export const watchLocalNetwork = ({ onChange, onAllowed }: LocalNetworkHandlers): LocalNetworkWatch => {
+	let blocked = false;
+	let recheck: ReturnType<typeof setInterval> | null = null;
+	let probing = false;
+	// Bumped by reset, so a probe that was running then can't mark the next server blocked.
+	let generation = 0;
+
+	const reset = () => {
+		generation++;
+		if (recheck !== null) clearInterval(recheck);
+		recheck = null;
+		blocked = false;
+	};
+
+	/** Is macOS the reason the server is unreachable? If so, reconnect as soon as the person allows access. */
+	const check = async (serverUrl: string) => {
+		if (probing) return;
+		probing = true;
+		const started = generation;
+		try {
+			const address = await localNetworkAddress(serverUrl);
+			const result = address === null ? "unreachable" : await probeLocalNetwork(address, serverUrl);
+			if (generation !== started) return;
+			if ((result === "blocked") !== blocked) console.log(`local network probe of ${address ?? "server"}: ${result}`);
+			if (result === "blocked") {
+				blocked = true;
+				recheck ??= setInterval(() => void check(serverUrl), RECHECK_MS);
+			} else if (blocked) {
+				reset();
+				if (result === "reachable") onAllowed();
+			}
+			onChange();
+		} finally {
+			probing = false;
+		}
+	};
+
+	return {
+		get blocked() {
+			return blocked;
+		},
+		observe: (connection, serverUrl) => {
+			if (connection._tag === "Connected") reset();
+			else if ((connection._tag === "Reconnecting" || connection._tag === "Failed") && connection.reason === SERVER_UNREACHABLE) {
+				void check(serverUrl);
+			}
+		},
+		reset,
+		openSettings: () => {
+			Utils.openExternal(SETTINGS_URL);
+		},
+	};
+};

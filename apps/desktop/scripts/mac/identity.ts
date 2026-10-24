@@ -10,10 +10,10 @@
  * - Adds the NSLocalNetworkUsageDescription the Local Network alert shows.
  * - Re-signs the bundle as school.shoal.desktop instead of "launcher", with
  *   the "Shoal Dev" identity when this Mac has one (see
- *   scripts/dev-signing-identity.ts) and ad hoc otherwise.
+ *   scripts/mac/dev-signing-identity.ts) and ad hoc otherwise.
  *
  * Hutch runs hooks with Cottontail and skips them for dev builds, so this
- * sticks to node: APIs and runs at import; scripts/dev.ts applies it to dev
+ * sticks to node: APIs and runs at import; scripts/mac/dev.ts applies it to dev
  * builds.
  */
 import { execFileSync } from "node:child_process";

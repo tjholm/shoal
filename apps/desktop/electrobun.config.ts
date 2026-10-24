@@ -16,7 +16,7 @@ export default {
 		exitOnLastWindowClosed: false,
 	},
 	scripts: {
-		postWrap: "scripts/mac-identity.ts",
+		postWrap: "scripts/mac/identity.ts",
 	},
 	build: {
 		// The worker is Effect on Bun; Cottontail's API coverage is undocumented.
