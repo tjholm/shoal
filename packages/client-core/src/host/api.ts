@@ -20,6 +20,9 @@ export interface SettingsInput {
 	readonly concurrency: number;
 }
 
+/** The settings a person can change from the UI, unless the client fixed them. */
+export type SettingField = "serverUrl" | "token" | "backends" | "name" | "concurrency";
+
 /** Where a client keeps its API keys. */
 export type TokenStorage = "credential-store" | "file";
 export type { FinishedJob, JobTask, RunningJob } from "../worker/run";
@@ -84,6 +87,8 @@ export interface SettingsView {
 	readonly name: string;
 	readonly concurrency: number;
 	readonly launchAtLogin: boolean;
+	/** What fixed each field the UI can't change, e.g. "--server". */
+	readonly fixedBy: Partial<Record<SettingField, string>>;
 }
 
 export interface SettingsForm extends SettingsInput {
@@ -115,6 +120,7 @@ export const isPaused = (a: Availability): a is { readonly pausedUntil: number }
 export type HostRequests = {
 	getState: { params: void; response: WorkerState };
 	getFeatures: { params: void; response: HostFeatures };
+	/** Null before setup unless the client fixed some settings; then `serverUrl` is empty if the server isn't one of them. */
 	getSettings: { params: void; response: SettingsView | null };
 	saveSettings: { params: SettingsForm; response: SaveResult };
 	setAvailability: { params: Availability; response: void };

@@ -82,6 +82,38 @@ export const credentialStoreTokens = (service: string): TokenStore => ({
 	save: (serverUrl, token) => Bun.secrets.set({ service, name: serverUrl, value: token }),
 });
 
+const TokensFile = Schema.fromJsonString(Schema.Record(Schema.String, Schema.String));
+
+/** One API key per server in `dir`/tokens.json, readable only by this user, for machines without a credential store. */
+export const fileTokens = (dir: string): TokenStore => {
+	const file = path.join(dir, "tokens.json");
+	const read = async (): Promise<Record<string, string>> => {
+		let raw: string;
+		try {
+			raw = await readFile(file, "utf8");
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+			throw error;
+		}
+		try {
+			return Schema.decodeUnknownSync(TokensFile)(raw);
+		} catch (error) {
+			throw new Error(`API key file ${file} is invalid. Fix or delete it, then set the key again.`, { cause: error });
+		}
+	};
+	return {
+		kind: "file",
+		load: async (serverUrl) => (await read())[serverUrl] ?? null,
+		save: async (serverUrl, token) => {
+			const tokens = { ...(await read()), [serverUrl]: token };
+			await mkdir(dir, { recursive: true, mode: 0o700 });
+			await writeFile(file, Schema.encodeSync(TokensFile)(tokens), { mode: 0o600 });
+			// writeFile's mode only applies when it creates the file.
+			await chmod(file, 0o600);
+		},
+	};
+};
+
 /** Bare hosts are allowed so people can paste "shoal.example.com". */
 const parseHttpUrl = (input: string) => {
 	const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(input) ? input : `https://${input}`;

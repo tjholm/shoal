@@ -44,7 +44,8 @@ function SettingsForm({
 	onReload: () => void;
 }) {
 	const [serverUrl, setServerUrl] = useState(saved.serverUrl);
-	const [replacingToken, setReplacingToken] = useState(!saved.hasToken);
+	const fixed = saved.fixedBy;
+	const [replacingToken, setReplacingToken] = useState(!saved.hasToken && fixed.token === undefined);
 	const [token, setToken] = useState("");
 	const [name, setName] = useState(saved.name);
 	const [backends, setBackends] = useState(() => saved.backends.map(row));
@@ -57,17 +58,22 @@ function SettingsForm({
 	const submit = async (event: FormEvent) => {
 		event.preventDefault();
 		setSaving(true);
-		const result = await host.request.saveSettings({
-			serverUrl,
-			token: replacingToken ? token : "",
-			backends: backends.map((b) => b.value),
-			name,
-			concurrency,
-			launchAtLogin,
-		});
-		setSaving(false);
-		if (result.ok) onReload();
-		else setErrors(result.errors);
+		try {
+			const result = await host.request.saveSettings({
+				serverUrl,
+				token: replacingToken ? token : "",
+				backends: backends.map((b) => b.value),
+				name,
+				concurrency,
+				launchAtLogin,
+			});
+			if (result.ok) onReload();
+			else setErrors(result.errors);
+		} catch (error) {
+			setErrors([error instanceof Error ? error.message : String(error)]);
+		} finally {
+			setSaving(false);
+		}
 	};
 
 	return (
@@ -77,14 +83,26 @@ function SettingsForm({
 				<section className="flex flex-col gap-3">
 					<SectionTitle>Server</SectionTitle>
 					<div className="grid grid-cols-[130px_minmax(0,1fr)] items-center gap-x-4 gap-y-3">
-						<Field label="Server address">
+						<Field label="Server address" fixedBy={fixed.serverUrl}>
 							{(id) => (
-								<Input id={id} value={serverUrl} onChange={(e) => setServerUrl(e.target.value)} className="font-mono" autoComplete="off" />
+								<Input
+									id={id}
+									value={serverUrl}
+									onChange={(e) => setServerUrl(e.target.value)}
+									disabled={fixed.serverUrl !== undefined}
+									className="font-mono"
+									autoComplete="off"
+								/>
 							)}
 						</Field>
 						<Field label="API key">
 							{(id) =>
-								replacingToken ? (
+								fixed.token !== undefined ? (
+									<div id={id} className="flex h-10 items-center gap-2 rounded-sm border border-line bg-trench px-3 text-[13px] text-mist">
+										<Lock size={14} className="text-lumen" aria-hidden="true" />
+										Set by {fixed.token}
+									</div>
+								) : replacingToken ? (
 									<div className="flex items-center gap-2.5">
 										<Input
 											id={id}
@@ -114,9 +132,16 @@ function SettingsForm({
 								)
 							}
 						</Field>
-						<Field label="Worker name">
+						<Field label="Worker name" fixedBy={fixed.name}>
 							{(id) => (
-								<Input id={id} value={name} onChange={(e) => setName(e.target.value)} placeholder="Keep the name set in shoal" autoComplete="off" />
+								<Input
+									id={id}
+									value={name}
+									onChange={(e) => setName(e.target.value)}
+									disabled={fixed.name !== undefined}
+									placeholder="Keep the name set in shoal"
+									autoComplete="off"
+								/>
 							)}
 						</Field>
 					</div>
@@ -125,10 +150,12 @@ function SettingsForm({
 				<section className="flex flex-col gap-3">
 					<div className="flex items-center justify-between">
 						<SectionTitle>Backends</SectionTitle>
-						<Button type="button" variant="outline" size="xs" onClick={() => setBackends((rows) => [...rows, row("")])}>
-							<Plus aria-hidden="true" />
-							Add backend
-						</Button>
+						{fixed.backends === undefined && (
+							<Button type="button" variant="outline" size="xs" onClick={() => setBackends((rows) => [...rows, row("")])}>
+								<Plus aria-hidden="true" />
+								Add backend
+							</Button>
+						)}
 					</div>
 					{backends.length === 0 ? (
 						<Empty>No backends. Add one above.</Empty>
@@ -146,6 +173,7 @@ function SettingsForm({
 												onChange={(e) =>
 													setBackends((rows) => rows.map((r) => (r.id === backend.id ? { ...r, value: e.target.value } : r)))
 												}
+												disabled={fixed.backends !== undefined}
 												placeholder="http://localhost:11434"
 												className="h-8 font-mono"
 												autoComplete="off"
@@ -157,31 +185,35 @@ function SettingsForm({
 											)}
 										</div>
 										{health && <BackendChip backend={health} />}
-										<Button
-											type="button"
-											variant="ghost"
-											size="icon-sm"
-											aria-label={`Remove backend ${index + 1}`}
-											onClick={() => setBackends((rows) => rows.filter((r) => r.id !== backend.id))}
-										>
-											<X aria-hidden="true" />
-										</Button>
+										{fixed.backends === undefined && (
+											<Button
+												type="button"
+												variant="ghost"
+												size="icon-sm"
+												aria-label={`Remove backend ${index + 1}`}
+												onClick={() => setBackends((rows) => rows.filter((r) => r.id !== backend.id))}
+											>
+												<X aria-hidden="true" />
+											</Button>
+										)}
 									</div>
 								);
 							})}
 						</Card>
 					)}
-					<p className="m-0 text-xs text-silt">Jobs go to the first backend that has the model.</p>
+					<p className="m-0 text-xs text-silt">
+						Jobs go to the first backend that has the model.{fixed.backends !== undefined && ` Set by ${fixed.backends}.`}
+					</p>
 				</section>
 
 				<section className="grid grid-cols-2 gap-3">
-					<Option title="Concurrent jobs" caption="Advertised to the server">
+					<Option title="Concurrent jobs" caption={fixed.concurrency === undefined ? "Advertised to the server" : `Set by ${fixed.concurrency}`}>
 						<div className="flex items-center overflow-hidden rounded-sm border border-line-strong">
-							<button type="button" aria-label="Fewer" onClick={() => setConcurrency((n) => Math.max(1, n - 1))} className="flex h-[30px] w-8 items-center justify-center bg-reef">
+							<button type="button" aria-label="Fewer" disabled={fixed.concurrency !== undefined} onClick={() => setConcurrency((n) => Math.max(1, n - 1))} className="flex h-[30px] w-8 items-center justify-center bg-reef">
 								<Minus size={14} aria-hidden="true" />
 							</button>
 							<span className="w-9 text-center font-mono text-sm">{concurrency}</span>
-							<button type="button" aria-label="More" onClick={() => setConcurrency((n) => n + 1)} className="flex h-[30px] w-8 items-center justify-center bg-reef">
+							<button type="button" aria-label="More" disabled={fixed.concurrency !== undefined} onClick={() => setConcurrency((n) => n + 1)} className="flex h-[30px] w-8 items-center justify-center bg-reef">
 								<Plus size={14} aria-hidden="true" />
 							</button>
 						</div>
@@ -223,14 +255,21 @@ function SettingsForm({
 	);
 }
 
-function Field({ label, children }: { label: string; children: (id: string) => ReactNode }) {
+function Field({ label, fixedBy, children }: { label: string; fixedBy?: string; children: (id: string) => ReactNode }) {
 	const id = useId();
 	return (
 		<>
 			<label htmlFor={id} className="text-[13px] text-mist">
 				{label}
 			</label>
-			{children(id)}
+			{fixedBy === undefined ? (
+				children(id)
+			) : (
+				<div className="flex flex-col gap-1">
+					{children(id)}
+					<span className="text-xs text-silt">Set by {fixedBy}</span>
+				</div>
+			)}
 		</>
 	);
 }

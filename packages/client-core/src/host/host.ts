@@ -7,7 +7,14 @@ import {
 	validateSettings,
 } from "../settings";
 import { SERVER_REFUSED, SERVER_TIMED_OUT, SERVER_UNREACHABLE, type WorkerConnection, type WorkerSnapshot } from "../worker/run";
-import { type BackendState, type HostHandlers, isPaused, type WorkerState, type WorkerStatus } from "./api";
+import {
+	type BackendState,
+	type HostHandlers,
+	isPaused,
+	type SettingField,
+	type WorkerState,
+	type WorkerStatus,
+} from "./api";
 import { type PlatformLayer, probeBackends, type RunningWorker, startWorker, toBackendState } from "./worker";
 
 /** A connection the worker wants but has lost, while it retries or after it gives up. */
@@ -39,11 +46,40 @@ export interface LocalNetworkHandlers {
 	readonly onAllowed: () => void;
 }
 
+interface SettingValues {
+	readonly serverUrl: string;
+	readonly token: string;
+	readonly backends: ReadonlyArray<string>;
+	readonly name: string;
+	readonly concurrency: number;
+}
+
+/**
+ * Settings fixed outside the UI, such as by the CLI's flags. They win over saved settings without replacing them,
+ * so dropping a flag brings the saved value back. With no settings file yet, the first save fills it from them.
+ */
+export type SettingsOverrides = {
+	readonly [K in SettingField]?: {
+		readonly value: SettingValues[K];
+		/** What fixed it, e.g. "--server", for the UI to show. */
+		readonly from: string;
+	};
+};
+
+/** What a worker fixed only by its server address uses for everything else. */
+const DEFAULT_SETTINGS: Omit<Settings, "serverUrl"> = {
+	backends: ["http://localhost:11434"],
+	name: "",
+	concurrency: 1,
+	availability: "on",
+};
+
 export interface HostOptions {
 	/** Holds the settings file and the worker's identity. */
 	readonly dir: string;
 	readonly tokens: TokenStore;
 	readonly platform: PlatformLayer;
+	readonly overrides?: SettingsOverrides;
 	/** Reconnect attempts after a failed connection before the worker waits for a retry; unlimited when absent. */
 	readonly reconnectAttempts?: number;
 	/** The client lives in the menu bar or system tray once set up. */
@@ -88,8 +124,23 @@ const neverBlocked: LocalNetworkWatch = {
 };
 
 export const createHost = async (options: HostOptions): Promise<Host> => {
-	let settings = await loadSettings(options.dir);
-	let token = settings && (await options.tokens.load(settings.serverUrl));
+	const overrides = options.overrides ?? {};
+	const applyOverrides = (base: Settings): Settings => ({
+		...base,
+		...(overrides.serverUrl && { serverUrl: overrides.serverUrl.value }),
+		...(overrides.backends && { backends: overrides.backends.value }),
+		...(overrides.name && { name: overrides.name.value }),
+		...(overrides.concurrency && { concurrency: overrides.concurrency.value }),
+	});
+	/** What's in the settings file, without overrides. */
+	let saved = await loadSettings(options.dir);
+	const effective = (): Settings | null => {
+		if (saved !== null) return applyOverrides(saved);
+		if (overrides.serverUrl) return applyOverrides({ ...DEFAULT_SETTINGS, serverUrl: overrides.serverUrl.value });
+		return null;
+	};
+	let settings = effective();
+	let token = overrides.token?.value ?? (settings && (await options.tokens.load(settings.serverUrl)));
 	let worker: RunningWorker | null = null;
 	let snapshot: WorkerSnapshot | null = null;
 	let onlineSince: number | null = null;
@@ -224,8 +275,10 @@ export const createHost = async (options: HostOptions): Promise<Host> => {
 	/** Switching off or pausing disconnects at once, abandoning running jobs. */
 	const setAvailability = async (next: Availability) => {
 		if (settings === null) return;
-		settings = { ...settings, availability: next };
-		await saveSettings(options.dir, settings);
+		// Without a settings file, the overrides are all there is to save.
+		saved = { ...(saved ?? settings), availability: next };
+		settings = effective();
+		await saveSettings(options.dir, saved);
 		clearTimeout(pauseEnd);
 		if (isPaused(next)) {
 			pauseEnd = setTimeout(() => void setAvailability("on"), Math.max(0, next.pausedUntil - Date.now()));
@@ -243,29 +296,48 @@ export const createHost = async (options: HostOptions): Promise<Host> => {
 			launchAtLogin: options.launchAtLogin !== undefined,
 			tray: options.tray ?? false,
 		}),
-		getSettings: () =>
-			settings && {
-				serverUrl: settings.serverUrl,
-				hasToken: token !== null,
-				backends: settings.backends,
-				name: settings.name,
-				concurrency: settings.concurrency,
-				launchAtLogin: options.launchAtLogin?.get() ?? false,
-			},
+		getSettings: () => {
+			// Before setup, the overrides alone, so Setup doesn't ask for what a flag already set.
+			const shown =
+				settings ??
+				(Object.keys(overrides).length > 0 ? applyOverrides({ ...DEFAULT_SETTINGS, serverUrl: "" }) : null);
+			return (
+				shown && {
+					serverUrl: shown.serverUrl,
+					hasToken: token !== null,
+					backends: shown.backends,
+					name: shown.name,
+					concurrency: shown.concurrency,
+					launchAtLogin: options.launchAtLogin?.get() ?? false,
+					fixedBy: Object.fromEntries(Object.entries(overrides).map(([field, fixed]) => [field, fixed.from])),
+				}
+			);
+		},
 		saveSettings: async (form) => {
 			const result = validateSettings(form, settings);
 			if ("errors" in result) return { ok: false, errors: result.errors };
+			// Fixed fields keep what the file had, so dropping a flag brings it back.
+			const next: Settings = {
+				...result.settings,
+				...(overrides.serverUrl && { serverUrl: saved?.serverUrl ?? result.settings.serverUrl }),
+				...(overrides.backends && { backends: saved?.backends ?? result.settings.backends }),
+				...(overrides.name && { name: saved?.name ?? result.settings.name }),
+				...(overrides.concurrency && { concurrency: saved?.concurrency ?? result.settings.concurrency }),
+			};
 			try {
-				const nextToken = result.token ?? (await options.tokens.load(result.settings.serverUrl));
+				const entered = overrides.token ? null : result.token;
+				const nextToken =
+					overrides.token?.value ?? entered ?? (await options.tokens.load(result.settings.serverUrl));
 				if (nextToken === null) {
 					return { ok: false, errors: ["Enter the API key from your shoal dashboard."] };
 				}
-				if (result.token !== null) await options.tokens.save(result.settings.serverUrl, result.token);
-				await saveSettings(options.dir, result.settings);
+				if (entered !== null) await options.tokens.save(result.settings.serverUrl, entered);
+				await saveSettings(options.dir, next);
 				if (options.launchAtLogin && form.launchAtLogin !== options.launchAtLogin.get()) {
 					await options.launchAtLogin.set(form.launchAtLogin);
 				}
-				settings = result.settings;
+				saved = next;
+				settings = effective();
 				token = nextToken;
 			} catch (error) {
 				return { ok: false, errors: [error instanceof Error ? error.message : String(error)] };
@@ -281,8 +353,8 @@ export const createHost = async (options: HostOptions): Promise<Host> => {
 	};
 
 	// A pause saved before a restart still needs its timer.
-	const saved = settings?.availability;
-	if (saved !== undefined && isPaused(saved)) await setAvailability(availability());
+	const savedAvailability = settings?.availability;
+	if (savedAvailability !== undefined && isPaused(savedAvailability)) await setAvailability(availability());
 	await restartWorker();
 
 	return {
